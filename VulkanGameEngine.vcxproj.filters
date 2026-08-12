@@ -15,6 +15,14 @@
     </Filter>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="main.cpp" />
+    <ClCompile Include="main_raii.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="main.cpp" />
+    <None Include="Shaders\compute.slang" />
+    <None Include="Shaders\particles.slang" />
+  </ItemGroup>
+  <ItemGroup>
+    <CustomBuild Include="Shaders\shader.slang" />
   </ItemGroup>
 </Project>

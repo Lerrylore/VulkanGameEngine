@@ -1,4 +1,4 @@
-<?xml version="1.0" encoding="utf-8"?>
+﻿<?xml version="1.0" encoding="utf-8"?>
 <Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup Label="ProjectConfigurations">
     <ProjectConfiguration Include="Debug|Win32">
@@ -22,7 +22,7 @@
     <VCProjectVersion>17.0</VCProjectVersion>
     <Keyword>Win32Proj</Keyword>
     <ProjectGuid>{003eea48-3861-452f-9c4d-9bc8858aa34d}</ProjectGuid>
-    <RootNamespace>VulkanPathTracer</RootNamespace>
+    <RootNamespace>VulkanGameEngine</RootNamespace>
     <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
@@ -102,10 +102,14 @@
       <SDLCheck>true</SDLCheck>
       <PreprocessorDefinitions>_DEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
+      <AdditionalIncludeDirectories>C:\VulkanSDK\1.4.341.1\Include</AdditionalIncludeDirectories>
+      <LanguageStandard>stdcpp20</LanguageStandard>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
+      <AdditionalLibraryDirectories>C:\VulkanSDK\1.4.341.1\Lib</AdditionalLibraryDirectories>
+      <AdditionalDependencies>vulkan-1.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
@@ -116,16 +120,44 @@
       <SDLCheck>true</SDLCheck>
       <PreprocessorDefinitions>NDEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
+      <AdditionalIncludeDirectories>C:\VulkanSDK\1.4.341.1\Include</AdditionalIncludeDirectories>
+      <LanguageStandard>stdcpp20</LanguageStandard>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
+      <AdditionalLibraryDirectories>C:\VulkanSDK\1.4.341.1\Lib</AdditionalLibraryDirectories>
+      <AdditionalDependencies>vulkan-1.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClCompile Include="main.cpp" />
+    <ClCompile Include="main_raii.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="main.cpp" />
+    <None Include="Shaders\compute.slang" />
+    <None Include="Shaders\particles.slang" />
+    <None Include="Shaders\shader.frag" />
+    <None Include="Shaders\shader.vert" />
+  </ItemGroup>
+  <ItemGroup>
+    <CustomBuild Include="Shaders\shader.slang">
+      <FileType>Document</FileType>
+      <Command>call &quot;$(ProjectDir)Shaders\compile.bat&quot;</Command>
+      <Message>Compiling Slang shaders...</Message>
+      <Outputs>$(ProjectDir)Shaders\slang.spv;$(ProjectDir)Shaders\particles.spv;$(ProjectDir)Shaders\compute.spv</Outputs>
+      <AdditionalInputs>$(ProjectDir)Shaders\compile.bat;$(ProjectDir)Shaders\particles.slang;$(ProjectDir)Shaders\compute.slang;%(AdditionalInputs)</AdditionalInputs>
+    </CustomBuild>
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+  <Target Name="CopyGlfwRuntime" AfterTargets="Build">
+    <ItemGroup>
+      <GlfwRuntime Include="$(_ZVcpkgCurrentInstalledDir)debug\bin\glfw3.dll" Condition="'$(Configuration)'=='Debug'" />
+      <GlfwRuntime Include="$(_ZVcpkgCurrentInstalledDir)bin\glfw3.dll" Condition="'$(Configuration)'!='Debug'" />
+    </ItemGroup>
+    <Error Condition="!Exists('@(GlfwRuntime)')" Text="GLFW runtime DLL not found at @(GlfwRuntime). Check the vcpkg installation for $(VcpkgTriplet)." />
+    <Copy SourceFiles="@(GlfwRuntime)" DestinationFolder="$(TargetDir)" SkipUnchangedFiles="true" />
+  </Target>
   <ImportGroup Label="ExtensionTargets">
   </ImportGroup>
 </Project>
