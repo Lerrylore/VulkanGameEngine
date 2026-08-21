@@ -22,6 +22,9 @@
     <Filter Include="Engine\Renderer">
       <UniqueIdentifier>{E4ECAC9A-A33D-47F1-8F68-5BBD12588EE3}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Engine\Resources">
+      <UniqueIdentifier>{76DE2E66-8541-4EAF-89C9-76C35FA53383}</UniqueIdentifier>
+    </Filter>
     <Filter Include="Engine\Vulkan">
       <UniqueIdentifier>{98B05178-0A17-4F36-AC9B-0640C81228EE}</UniqueIdentifier>
     </Filter>
@@ -40,6 +43,9 @@
     <ClCompile Include="Engine\Renderer\RenderTargetResources.cpp">
       <Filter>Engine\Renderer</Filter>
     </ClCompile>
+    <ClCompile Include="Engine\Resources\ImageAllocation.cpp">
+      <Filter>Engine\Resources</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Engine\Platform\Window.h">
@@ -50,6 +56,9 @@
     </ClInclude>
     <ClInclude Include="Engine\Renderer\RenderTargetResources.h">
       <Filter>Engine\Renderer</Filter>
+    </ClInclude>
+    <ClInclude Include="Engine\Resources\ImageAllocation.h">
+      <Filter>Engine\Resources</Filter>
     </ClInclude>
     <ClInclude Include="Engine\Vulkan\VulkanContext.h">
       <Filter>Engine\Vulkan</Filter>

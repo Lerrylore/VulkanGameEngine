@@ -6,6 +6,7 @@
 #include <iostream>
 #include <limits>
 #include <memory>
+#include <optional>
 #include <random>
 #include <stdexcept>
 #include <unordered_map>
@@ -21,6 +22,7 @@
 #include "Engine/Platform/Window.h"
 #include "Engine/Renderer/RenderTargetResources.h"
 #include "Engine/Renderer/SwapchainResources.h"
+#include "Engine/Resources/ImageAllocation.h"
 #include "Engine/Vulkan/VulkanContext.h"
 
 // STB Image implementation
@@ -208,8 +210,7 @@ class VulkanGameEngineApplication
 	std::vector<vk::raii::DescriptorSet> computeDescriptorSets;
 
 	uint32_t               mipLevels = 0;
-	vk::raii::Image        textureImage = nullptr;
-	vk::raii::DeviceMemory textureImageMemory = nullptr;
+	std::optional<ImageAllocation> textureImage;
 	vk::raii::ImageView textureImageView = nullptr;
 	vk::raii::Sampler      textureSampler = nullptr;
 
@@ -549,21 +550,26 @@ class VulkanGameEngineApplication
 
 		stbi_image_free(pixels);
 
-		std::tie(textureImage, textureImageMemory) = createImage(texWidth,
-			texHeight,
+		textureImage.emplace(
+			vulkan,
+			static_cast<uint32_t>(texWidth),
+			static_cast<uint32_t>(texHeight),
 			mipLevels,
 			vk::SampleCountFlagBits::e1,
 			textureFormat,
 			vk::ImageTiling::eOptimal,
-			vk::ImageUsageFlagBits::eTransferSrc | vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eSampled,
+			vk::ImageUsageFlagBits::eTransferSrc |
+				vk::ImageUsageFlagBits::eTransferDst |
+				vk::ImageUsageFlagBits::eSampled,
 			vk::MemoryPropertyFlagBits::eDeviceLocal);
+		auto& image = textureImage->image();
 
 		vk::raii::CommandBuffer commandBuffer = beginSingleTimeCommands();
-		transitionImageLayout(commandBuffer, textureImage, vk::ImageLayout::eUndefined, vk::ImageLayout::eTransferDstOptimal, mipLevels);
+		transitionImageLayout(commandBuffer, image, vk::ImageLayout::eUndefined, vk::ImageLayout::eTransferDstOptimal, mipLevels);
 		if (supportsLinearBlit)
 		{
-			copyBufferToImage(commandBuffer, stagingBuffer, textureImage, static_cast<uint32_t>(texWidth), static_cast<uint32_t>(texHeight));
-			generateMipmaps(commandBuffer, textureImage, textureFormat, texWidth, texHeight, mipLevels);
+			copyBufferToImage(commandBuffer, stagingBuffer, image, static_cast<uint32_t>(texWidth), static_cast<uint32_t>(texHeight));
+			generateMipmaps(commandBuffer, image, textureFormat, texWidth, texHeight, mipLevels);
 		}
 		else
 		{
@@ -584,8 +590,8 @@ class VulkanGameEngineApplication
 					.imageOffset = {0, 0, 0},
 					.imageExtent = {mip.width, mip.height, 1}});
 			}
-			commandBuffer.copyBufferToImage(stagingBuffer, textureImage, vk::ImageLayout::eTransferDstOptimal, regions);
-			transitionImageLayout(commandBuffer, textureImage, vk::ImageLayout::eTransferDstOptimal, vk::ImageLayout::eShaderReadOnlyOptimal, mipLevels);
+			commandBuffer.copyBufferToImage(stagingBuffer, image, vk::ImageLayout::eTransferDstOptimal, regions);
+			transitionImageLayout(commandBuffer, image, vk::ImageLayout::eTransferDstOptimal, vk::ImageLayout::eShaderReadOnlyOptimal, mipLevels);
 		}
 		endSingleTimeCommands(std::move(commandBuffer));
 	}
@@ -675,7 +681,7 @@ class VulkanGameEngineApplication
 
 	void createTextureImageView()
 	{
-		textureImageView = createImageView(*textureImage, vk::Format::eR8G8B8A8Srgb, vk::ImageAspectFlagBits::eColor, mipLevels);
+		textureImageView = createImageView(*textureImage->image(), vk::Format::eR8G8B8A8Srgb, vk::ImageAspectFlagBits::eColor, mipLevels);
 	}
 
 	void createTextureSampler()
@@ -749,30 +755,6 @@ class VulkanGameEngineApplication
 						   .imageExtent = {width, height, 1} };
 
 		commandBuffer.copyBufferToImage(buffer, image, vk::ImageLayout::eTransferDstOptimal, region);
-	}
-
-	std::pair<vk::raii::Image, vk::raii::DeviceMemory> createImage(
-		uint32_t width, uint32_t height, uint32_t mipLevels, vk::SampleCountFlagBits numSamples, vk::Format format, vk::ImageTiling tiling, vk::ImageUsageFlags usage, vk::MemoryPropertyFlags properties)
-	{
-		vk::ImageCreateInfo imageInfo{ .imageType = vk::ImageType::e2D,
-									  .format = format,
-									  .extent = {width, height, 1},
-									  .mipLevels = mipLevels,
-									  .arrayLayers = 1,
-									  .samples = numSamples,
-									  .tiling = tiling,
-									  .usage = usage,
-									  .sharingMode = vk::SharingMode::eExclusive };
-
-		vk::raii::Image image = vk::raii::Image(device, imageInfo);
-
-		vk::MemoryRequirements memRequirements = image.getMemoryRequirements();
-		vk::MemoryAllocateInfo allocInfo{ .allocationSize = memRequirements.size,
-										 .memoryTypeIndex = findMemoryType(memRequirements.memoryTypeBits, properties) };
-		vk::raii::DeviceMemory imageMemory = vk::raii::DeviceMemory(device, allocInfo);
-		image.bindMemory(imageMemory, 0);
-
-		return { std::move(image), std::move(imageMemory) };
 	}
 
 	vk::raii::CommandBuffer beginSingleTimeCommands()
