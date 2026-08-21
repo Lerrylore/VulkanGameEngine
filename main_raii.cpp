@@ -18,6 +18,8 @@
 #include <glm/gtc/matrix_transform.hpp>
 #include <chrono>
 
+#include "window.hpp"
+
 // STB Image implementation
 #define STB_IMAGE_IMPLEMENTATION
 #include <stb_image.h>
@@ -156,14 +158,14 @@ class VulkanGameEngineApplication
   public:
 	void run()
 	{
-		initWindow();
 		initVulkan();
 		mainLoop();
-		cleanup();
 	}
 
   private:
-	GLFWwindow                      *window = nullptr;
+	// Declared first so it is destroyed last: the Vulkan surface must not outlive
+	// the native window from which it was created.
+	Window                           window{WIDTH, HEIGHT, "Vulkan Game Engine"};
 	vk::raii::Context                context;
 	vk::raii::Instance               instance       = nullptr;
 	vk::raii::DebugUtilsMessengerEXT debugMessenger = nullptr;
@@ -236,28 +238,8 @@ class VulkanGameEngineApplication
 	std::vector<Vertex>    vertices;
 	std::vector<uint32_t>  indices;
 
-	bool framebufferResized = false;
-
 	std::vector<const char *> requiredDeviceExtension = {
 	    vk::KHRSwapchainExtensionName};
-
-	void initWindow()
-	{
-		glfwInit();
-
-		glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
-		glfwWindowHint(GLFW_RESIZABLE, GLFW_TRUE);
-
-		window = glfwCreateWindow(WIDTH, HEIGHT, "Vulkan Game Engine", nullptr, nullptr);
-		glfwSetWindowUserPointer(window, this);
-		glfwSetFramebufferSizeCallback(window, framebufferResizeCallback);
-	}
-
-	static void framebufferResizeCallback(GLFWwindow *window, int width, int height)
-	{
-		auto app                = reinterpret_cast<VulkanGameEngineApplication *>(glfwGetWindowUserPointer(window));
-		app->framebufferResized = true;
-	}
 
 	void initVulkan()
 	{
@@ -295,9 +277,9 @@ class VulkanGameEngineApplication
 
 	void mainLoop()
 	{
-		while (!glfwWindowShouldClose(window))
+		while (!window.shouldClose())
 		{
-			glfwPollEvents();
+			window.pollEvents();
 			drawFrame();
 		}
 
@@ -316,21 +298,13 @@ class VulkanGameEngineApplication
 		swapChain = nullptr;
 	}
 
-	void cleanup()
-	{
-		glfwDestroyWindow(window);
-
-		glfwTerminate();
-	}
-
 	void recreateSwapChain()
 	{
-		int width = 0, height = 0;
-		glfwGetFramebufferSize(window, &width, &height);
+		auto [width, height] = window.framebufferSize();
 		while (width == 0 || height == 0)
 		{
-			glfwGetFramebufferSize(window, &width, &height);
-			glfwWaitEvents();
+			window.waitEvents();
+			std::tie(width, height) = window.framebufferSize();
 		}
 
 		device.waitIdle();
@@ -412,7 +386,7 @@ class VulkanGameEngineApplication
 	void createSurface()
 	{
 		VkSurfaceKHR _surface;
-		if (glfwCreateWindowSurface(*instance, window, nullptr, &_surface) != 0)
+		if (glfwCreateWindowSurface(*instance, window.nativeHandle(), nullptr, &_surface) != 0)
 		{
 			throw std::runtime_error("failed to create window surface!");
 		}
@@ -1749,9 +1723,9 @@ class VulkanGameEngineApplication
 		result = queue.presentKHR(presentInfoKHR);
 		// Due to VULKAN_HPP_HANDLE_ERROR_OUT_OF_DATE_AS_SUCCESS being defined, eErrorOutOfDateKHR can be checked as a result
 		// here and does not need to be caught by an exception.
-		if ((result == vk::Result::eSuboptimalKHR) || (result == vk::Result::eErrorOutOfDateKHR) || framebufferResized)
+		if ((result == vk::Result::eSuboptimalKHR) || (result == vk::Result::eErrorOutOfDateKHR) || window.wasFramebufferResized())
 		{
-			framebufferResized = false;
+			window.resetFramebufferResized();
 			recreateSwapChain();
 		}
 		else
@@ -1851,8 +1825,7 @@ class VulkanGameEngineApplication
 		{
 			return capabilities.currentExtent;
 		}
-		int width, height;
-		glfwGetFramebufferSize(window, &width, &height);
+		const auto [width, height] = window.framebufferSize();
 
 		return {
 		    std::clamp<uint32_t>(width, capabilities.minImageExtent.width, capabilities.maxImageExtent.width),

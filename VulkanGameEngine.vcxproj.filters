@@ -16,6 +16,14 @@
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="main_raii.cpp" />
+    <ClCompile Include="window.cpp">
+      <Filter>File di origine</Filter>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="window.hpp">
+      <Filter>File di intestazione</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <None Include="main.cpp" />
