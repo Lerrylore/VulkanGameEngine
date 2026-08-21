@@ -22,6 +22,7 @@
 #include "Engine/Platform/Window.h"
 #include "Engine/Renderer/RenderTargetResources.h"
 #include "Engine/Renderer/SwapchainResources.h"
+#include "Engine/Resources/BufferAllocation.h"
 #include "Engine/Resources/ImageAllocation.h"
 #include "Engine/Vulkan/VulkanContext.h"
 
@@ -191,10 +192,7 @@ class VulkanGameEngineApplication
 	vk::raii::PipelineLayout      computePipelineLayout = nullptr;
 	vk::raii::Pipeline            computePipeline = nullptr;
 
-	// The memory owner is declared before the buffer so that RAII destroys the
-	// buffer first (class members are destroyed in reverse declaration order).
-	vk::raii::DeviceMemory geometryBufferMemory = nullptr;
-	vk::raii::Buffer       geometryBuffer       = nullptr;
+	std::optional<BufferAllocation> geometryBuffer;
 	vk::DeviceSize         vertexBufferOffset   = 0;
 	vk::DeviceSize         indexBufferOffset    = 0;
 
@@ -896,21 +894,27 @@ class VulkanGameEngineApplication
 		indexBufferOffset  = ((vertexBufferSize + indexAlignment - 1) / indexAlignment) * indexAlignment;
 		const vk::DeviceSize geometryBufferSize = indexBufferOffset + indexBufferSize;
 
-		auto [stagingBuffer, stagingBufferMemory] =
-			createBuffer(geometryBufferSize, vk::BufferUsageFlagBits::eTransferSrc, vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent);
+		BufferAllocation stagingBuffer{
+			vulkan,
+			geometryBufferSize,
+			vk::BufferUsageFlagBits::eTransferSrc,
+			vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent};
 
-		void* dataStaging = stagingBufferMemory.mapMemory(0, geometryBufferSize);
+		void* dataStaging = stagingBuffer.memory().mapMemory(0, geometryBufferSize);
 		memset(dataStaging, 0, static_cast<size_t>(geometryBufferSize));
 		memcpy(static_cast<char*>(dataStaging) + vertexBufferOffset, vertices.data(), static_cast<size_t>(vertexBufferSize));
 		memcpy(static_cast<char*>(dataStaging) + indexBufferOffset, indices.data(), static_cast<size_t>(indexBufferSize));
-		stagingBufferMemory.unmapMemory();
+		stagingBuffer.memory().unmapMemory();
 
-		std::tie(geometryBuffer, geometryBufferMemory) =
-			createBuffer(geometryBufferSize,
-			             vk::BufferUsageFlagBits::eVertexBuffer | vk::BufferUsageFlagBits::eIndexBuffer | vk::BufferUsageFlagBits::eTransferDst,
-			             vk::MemoryPropertyFlagBits::eDeviceLocal);
+		geometryBuffer.emplace(
+			vulkan,
+			geometryBufferSize,
+			vk::BufferUsageFlagBits::eVertexBuffer |
+				vk::BufferUsageFlagBits::eIndexBuffer |
+				vk::BufferUsageFlagBits::eTransferDst,
+			vk::MemoryPropertyFlagBits::eDeviceLocal);
 
-		copyBuffer(stagingBuffer, geometryBuffer, geometryBufferSize);
+		copyBuffer(stagingBuffer.buffer(), geometryBuffer->buffer(), geometryBufferSize);
 	}
 
 	void createParticleBuffers()
@@ -1247,8 +1251,8 @@ class VulkanGameEngineApplication
 
 		commandBuffer.beginRendering(renderingInfo);
 		commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, *graphicsPipeline);
-		commandBuffer.bindVertexBuffers(0, *geometryBuffer, {vertexBufferOffset});
-		commandBuffer.bindIndexBuffer(*geometryBuffer, indexBufferOffset, vk::IndexTypeValue<decltype(indices)::value_type>::value);
+		commandBuffer.bindVertexBuffers(0, *geometryBuffer->buffer(), {vertexBufferOffset});
+		commandBuffer.bindIndexBuffer(*geometryBuffer->buffer(), indexBufferOffset, vk::IndexTypeValue<decltype(indices)::value_type>::value);
 		commandBuffer.setViewport(0, vk::Viewport(0.0f, 0.0f, static_cast<float>(swapChainExtent.width), static_cast<float>(swapChainExtent.height), 0.0f, 1.0f));
 		commandBuffer.setScissor(0, vk::Rect2D(vk::Offset2D(0, 0), swapChainExtent));
 
