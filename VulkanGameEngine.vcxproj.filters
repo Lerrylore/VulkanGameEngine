@@ -19,6 +19,9 @@
     <Filter Include="Engine\Platform">
       <UniqueIdentifier>{307C3B84-2BEB-43EA-A0B2-1614466023E4}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Engine\Renderer">
+      <UniqueIdentifier>{E4ECAC9A-A33D-47F1-8F68-5BBD12588EE3}</UniqueIdentifier>
+    </Filter>
     <Filter Include="Engine\Vulkan">
       <UniqueIdentifier>{98B05178-0A17-4F36-AC9B-0640C81228EE}</UniqueIdentifier>
     </Filter>
@@ -31,10 +34,16 @@
     <ClCompile Include="Engine\Platform\Window.cpp">
       <Filter>Engine\Platform</Filter>
     </ClCompile>
+    <ClCompile Include="Engine\Renderer\SwapchainResources.cpp">
+      <Filter>Engine\Renderer</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Engine\Platform\Window.h">
       <Filter>Engine\Platform</Filter>
+    </ClInclude>
+    <ClInclude Include="Engine\Renderer\SwapchainResources.h">
+      <Filter>Engine\Renderer</Filter>
     </ClInclude>
     <ClInclude Include="Engine\Vulkan\VulkanContext.h">
       <Filter>Engine\Vulkan</Filter>

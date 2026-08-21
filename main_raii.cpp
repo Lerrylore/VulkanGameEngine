@@ -19,6 +19,7 @@
 #include <chrono>
 
 #include "Engine/Platform/Window.h"
+#include "Engine/Renderer/SwapchainResources.h"
 #include "Engine/Vulkan/VulkanContext.h"
 
 // STB Image implementation
@@ -164,11 +165,13 @@ class VulkanGameEngineApplication
 	vk::raii::Device&                device = vulkan.device();
 	const uint32_t                   queueIndex = vulkan.queueFamilyIndex();
 	vk::raii::Queue&                 queue = vulkan.queue();
-	vk::raii::SwapchainKHR           swapChain      = nullptr;
-	std::vector<vk::Image>           swapChainImages;
-	vk::SurfaceFormatKHR             swapChainSurfaceFormat;
-	vk::Extent2D                     swapChainExtent;
-	std::vector<vk::raii::ImageView> swapChainImageViews;
+	SwapchainResources               swapchainResources{vulkan, window};
+	// Temporary aliases until the renderer consumes SwapchainResources directly.
+	vk::raii::SwapchainKHR&          swapChain = swapchainResources.handle();
+	const std::vector<vk::Image>&    swapChainImages = swapchainResources.images();
+	const vk::SurfaceFormatKHR&      swapChainSurfaceFormat = swapchainResources.surfaceFormat();
+	const vk::Extent2D&              swapChainExtent = swapchainResources.extent();
+	const std::vector<vk::raii::ImageView>& swapChainImageViews = swapchainResources.imageViews();
 
 	vk::raii::DescriptorSetLayout descriptorSetLayout = nullptr;
 	vk::raii::PipelineLayout pipelineLayout   = nullptr;
@@ -230,8 +233,6 @@ class VulkanGameEngineApplication
 
 	void initVulkan()
 	{
-		createSwapChain();
-		createImageViews();
 		createDescriptorSetLayout();
 		createComputeDescriptorSetLayout();
 		createGraphicsPipeline();
@@ -268,7 +269,7 @@ class VulkanGameEngineApplication
 		device.waitIdle();
 	}
 
-	void cleanupSwapChain()
+	void cleanupSwapChainAttachments()
 	{
 		colorImageView = nullptr;
 		colorImage = nullptr;
@@ -276,8 +277,6 @@ class VulkanGameEngineApplication
 		depthImageView = nullptr;
 		depthImage = nullptr;
 		depthImageMemory = nullptr;
-		swapChainImageViews.clear();
-		swapChain = nullptr;
 	}
 
 	void recreateSwapChain()
@@ -291,44 +290,17 @@ class VulkanGameEngineApplication
 
 		device.waitIdle();
 
-		cleanupSwapChain();
-		createSwapChain();
-		createImageViews();
+		cleanupSwapChainAttachments();
+		const bool formatChanged = swapchainResources.recreate();
+		renderFinishedSemaphores.clear();
+		createRenderFinishedSemaphores();
+		if (formatChanged)
+		{
+			createGraphicsPipeline();
+			createParticleGraphicsPipeline();
+		}
 		createColorResources();
 		createDepthResources();
-	}
-
-	void createSwapChain()
-	{
-		auto surfaceCapabilities = physicalDevice.getSurfaceCapabilitiesKHR(*vulkan.surface());
-		swapChainExtent          = chooseSwapExtent(surfaceCapabilities);
-		swapChainSurfaceFormat   = chooseSwapSurfaceFormat(physicalDevice.getSurfaceFormatsKHR(*vulkan.surface()));
-		vk::SwapchainCreateInfoKHR swapChainCreateInfo{.surface          = *vulkan.surface(),
-		                                               .minImageCount    = chooseSwapMinImageCount(surfaceCapabilities),
-		                                               .imageFormat      = swapChainSurfaceFormat.format,
-		                                               .imageColorSpace  = swapChainSurfaceFormat.colorSpace,
-		                                               .imageExtent      = swapChainExtent,
-		                                               .imageArrayLayers = 1,
-		                                               .imageUsage       = vk::ImageUsageFlagBits::eColorAttachment,
-		                                               .imageSharingMode = vk::SharingMode::eExclusive,
-		                                               .preTransform     = surfaceCapabilities.currentTransform,
-		                                               .compositeAlpha   = vk::CompositeAlphaFlagBitsKHR::eOpaque,
-		                                               .presentMode      = chooseSwapPresentMode(physicalDevice.getSurfacePresentModesKHR(*vulkan.surface())),
-		                                               .clipped          = true};
-
-		swapChain       = vk::raii::SwapchainKHR(device, swapChainCreateInfo);
-		swapChainImages = swapChain.getImages();
-	}
-
-	void createImageViews()
-	{
-		assert(swapChainImageViews.empty());
-
-		swapChainImageViews.reserve(swapChainImages.size());
-		for (auto& image : swapChainImages)
-		{
-			swapChainImageViews.emplace_back(createImageView(image, swapChainSurfaceFormat.format, vk::ImageAspectFlagBits::eColor, 1));
-		}
 	}
 
 	vk::raii::ImageView createImageView(vk::Image const& image, vk::Format format, vk::ImageAspectFlags aspectFlags, uint32_t mipLevels)
@@ -1424,17 +1396,23 @@ class VulkanGameEngineApplication
 	void createSyncObjects()
 	{
 		assert(presentCompleteSemaphores.empty() && renderFinishedSemaphores.empty() && computeFinishedSemaphores.empty() && inFlightFences.empty());
-
-		for (size_t i = 0; i < swapChainImages.size(); i++)
-		{
-			renderFinishedSemaphores.emplace_back(device, vk::SemaphoreCreateInfo());
-		}
+		createRenderFinishedSemaphores();
 
 		for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++)
 		{
 			presentCompleteSemaphores.emplace_back(device, vk::SemaphoreCreateInfo());
 			computeFinishedSemaphores.emplace_back(device, vk::SemaphoreCreateInfo());
 			inFlightFences.emplace_back(device, vk::FenceCreateInfo{.flags = vk::FenceCreateFlagBits::eSignaled});
+		}
+	}
+
+	void createRenderFinishedSemaphores()
+	{
+		assert(renderFinishedSemaphores.empty());
+		renderFinishedSemaphores.reserve(swapChainImages.size());
+		for (size_t i = 0; i < swapChainImages.size(); ++i)
+		{
+			renderFinishedSemaphores.emplace_back(device, vk::SemaphoreCreateInfo());
 		}
 	}
 
@@ -1573,47 +1551,6 @@ class VulkanGameEngineApplication
 		vk::raii::ShaderModule     shaderModule{device, createInfo};
 
 		return shaderModule;
-	}
-
-	static uint32_t chooseSwapMinImageCount(vk::SurfaceCapabilitiesKHR const &surfaceCapabilities)
-	{
-		auto minImageCount = std::max(3u, surfaceCapabilities.minImageCount);
-		if ((0 < surfaceCapabilities.maxImageCount) && (surfaceCapabilities.maxImageCount < minImageCount))
-		{
-			minImageCount = surfaceCapabilities.maxImageCount;
-		}
-		return minImageCount;
-	}
-
-	static vk::SurfaceFormatKHR chooseSwapSurfaceFormat(const std::vector<vk::SurfaceFormatKHR> &availableFormats)
-	{
-		assert(!availableFormats.empty());
-		const auto formatIt = std::ranges::find_if(
-		    availableFormats,
-		    [](const auto &format) { return format.format == vk::Format::eB8G8R8A8Srgb && format.colorSpace == vk::ColorSpaceKHR::eSrgbNonlinear; });
-		return formatIt != availableFormats.end() ? *formatIt : availableFormats[0];
-	}
-
-	static vk::PresentModeKHR chooseSwapPresentMode(const std::vector<vk::PresentModeKHR> &availablePresentModes)
-	{
-		assert(std::ranges::any_of(availablePresentModes, [](auto presentMode) { return presentMode == vk::PresentModeKHR::eFifo; }));
-		return std::ranges::any_of(availablePresentModes,
-		                           [](const vk::PresentModeKHR value) { return vk::PresentModeKHR::eMailbox == value; }) ?
-		           vk::PresentModeKHR::eMailbox :
-		           vk::PresentModeKHR::eFifo;
-	}
-
-	vk::Extent2D chooseSwapExtent(const vk::SurfaceCapabilitiesKHR &capabilities)
-	{
-		if (capabilities.currentExtent.width != 0xFFFFFFFF)
-		{
-			return capabilities.currentExtent;
-		}
-		const auto [width, height] = window.framebufferSize();
-
-		return {
-		    std::clamp<uint32_t>(width, capabilities.minImageExtent.width, capabilities.maxImageExtent.width),
-		    std::clamp<uint32_t>(height, capabilities.minImageExtent.height, capabilities.maxImageExtent.height)};
 	}
 
 	static std::vector<char> readFile(const std::string &filename)
