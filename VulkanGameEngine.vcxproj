@@ -132,10 +132,12 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="main_raii.cpp" />
+    <ClCompile Include="vulkan_context.cpp" />
     <ClCompile Include="window.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="window.hpp" />
+    <ClInclude Include="vulkan_context.hpp" />
   </ItemGroup>
   <ItemGroup>
     <None Include="main.cpp" />

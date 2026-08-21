@@ -18,6 +18,7 @@
 #include <glm/gtc/matrix_transform.hpp>
 #include <chrono>
 
+#include "vulkan_context.hpp"
 #include "window.hpp"
 
 // STB Image implementation
@@ -27,13 +28,6 @@
 #include <stb_image_resize2.h>
 
 #define GLM_FORCE_DEFAULT_ALIGNED_GENTYPES
-#define VULKAN_HPP_DISPATCH_LOADER_DYNAMIC 1
-#define VULKAN_HPP_NO_STRUCT_CONSTRUCTORS 1
-#include <vulkan/vulkan_raii.hpp>
-
-#define GLFW_INCLUDE_VULKAN        // REQUIRED only for GLFW CreateWindowSurface.
-#include <GLFW/glfw3.h>
-
 constexpr uint32_t WIDTH                = 800;
 constexpr uint32_t HEIGHT               = 600;
 constexpr uint32_t PARTICLE_COUNT       = 8192;
@@ -42,9 +36,6 @@ constexpr int      MAX_FRAMES_IN_FLIGHT = 2;
 constexpr int      MAX_OBJECTS          = 3;
 const std::string  MODEL_PATH = "Models/viking_room.obj";
 const std::string  TEXTURE_PATH = "Textures/viking_room.png";
-
-const std::vector<char const *> validationLayers = {
-    "VK_LAYER_KHRONOS_validation"};
 
 #ifdef NDEBUG
 constexpr bool enableValidationLayers = false;
@@ -166,10 +157,7 @@ class VulkanGameEngineApplication
 	// Declared first so it is destroyed last: the Vulkan surface must not outlive
 	// the native window from which it was created.
 	Window                           window{WIDTH, HEIGHT, "Vulkan Game Engine"};
-	vk::raii::Context                context;
-	vk::raii::Instance               instance       = nullptr;
-	vk::raii::DebugUtilsMessengerEXT debugMessenger = nullptr;
-	vk::raii::SurfaceKHR             surface        = nullptr;
+	VulkanContext                    vulkan{window, enableValidationLayers};
 	vk::raii::PhysicalDevice         physicalDevice = nullptr;
 	vk::raii::Device                 device         = nullptr;
 	uint32_t                         queueIndex     = ~0;
@@ -243,9 +231,6 @@ class VulkanGameEngineApplication
 
 	void initVulkan()
 	{
-		createInstance();
-		setupDebugMessenger();
-		createSurface();
 		pickPhysicalDevice();
 		createLogicalDevice();
 		createSwapChain();
@@ -316,83 +301,6 @@ class VulkanGameEngineApplication
 		createDepthResources();
 	}
 
-	void createInstance()
-	{
-		constexpr vk::ApplicationInfo appInfo{.pApplicationName   = "Hello Triangle",
-		                                      .applicationVersion = VK_MAKE_VERSION(1, 0, 0),
-		                                      .pEngineName        = "No Engine",
-		                                      .engineVersion      = VK_MAKE_VERSION(1, 0, 0),
-		                                      .apiVersion         = vk::ApiVersion14};
-
-		// Get the required layers
-		std::vector<char const *> requiredLayers;
-		if (enableValidationLayers)
-		{
-			requiredLayers.assign(validationLayers.begin(), validationLayers.end());
-		}
-
-		// Check if the required layers are supported by the Vulkan implementation.
-		auto layerProperties    = context.enumerateInstanceLayerProperties();
-		auto unsupportedLayerIt = std::ranges::find_if(requiredLayers,
-		                                               [&layerProperties](auto const &requiredLayer) {
-			                                               return std::ranges::none_of(layerProperties,
-			                                                                           [requiredLayer](auto const &layerProperty) { return strcmp(layerProperty.layerName, requiredLayer) == 0; });
-		                                               });
-		if (unsupportedLayerIt != requiredLayers.end())
-		{
-			throw std::runtime_error("Required layer not supported: " + std::string(*unsupportedLayerIt));
-		}
-
-		// Get the required extensions.
-		auto requiredExtensions = getRequiredInstanceExtensions();
-
-		// Check if the required extensions are supported by the Vulkan implementation.
-		auto extensionProperties = context.enumerateInstanceExtensionProperties();
-		auto unsupportedPropertyIt =
-		    std::ranges::find_if(requiredExtensions,
-		                         [&extensionProperties](auto const &requiredExtension) {
-			                         return std::ranges::none_of(extensionProperties,
-			                                                     [requiredExtension](auto const &extensionProperty) { return strcmp(extensionProperty.extensionName, requiredExtension) == 0; });
-		                         });
-		if (unsupportedPropertyIt != requiredExtensions.end())
-		{
-			throw std::runtime_error("Required extension not supported: " + std::string(*unsupportedPropertyIt));
-		}
-
-		vk::InstanceCreateInfo createInfo{.pApplicationInfo        = &appInfo,
-		                                  .enabledLayerCount       = static_cast<uint32_t>(requiredLayers.size()),
-		                                  .ppEnabledLayerNames     = requiredLayers.data(),
-		                                  .enabledExtensionCount   = static_cast<uint32_t>(requiredExtensions.size()),
-		                                  .ppEnabledExtensionNames = requiredExtensions.data()};
-		instance = vk::raii::Instance(context, createInfo);
-	}
-
-	void setupDebugMessenger()
-	{
-		if (!enableValidationLayers)
-			return;
-
-		vk::DebugUtilsMessageSeverityFlagsEXT severityFlags(vk::DebugUtilsMessageSeverityFlagBitsEXT::eVerbose |
-		                                                    vk::DebugUtilsMessageSeverityFlagBitsEXT::eWarning |
-		                                                    vk::DebugUtilsMessageSeverityFlagBitsEXT::eError);
-		vk::DebugUtilsMessageTypeFlagsEXT     messageTypeFlags(
-            vk::DebugUtilsMessageTypeFlagBitsEXT::eGeneral | vk::DebugUtilsMessageTypeFlagBitsEXT::ePerformance | vk::DebugUtilsMessageTypeFlagBitsEXT::eValidation);
-		vk::DebugUtilsMessengerCreateInfoEXT debugUtilsMessengerCreateInfoEXT{.messageSeverity = severityFlags,
-		                                                                      .messageType     = messageTypeFlags,
-		                                                                      .pfnUserCallback = &debugCallback};
-		debugMessenger = instance.createDebugUtilsMessengerEXT(debugUtilsMessengerCreateInfoEXT);
-	}
-
-	void createSurface()
-	{
-		VkSurfaceKHR _surface;
-		if (glfwCreateWindowSurface(*instance, window.nativeHandle(), nullptr, &_surface) != 0)
-		{
-			throw std::runtime_error("failed to create window surface!");
-		}
-		surface = vk::raii::SurfaceKHR(instance, _surface);
-	}
-
 	bool isDeviceSuitable( vk::raii::PhysicalDevice const & physicalDevice )
   {
     // Check if the physicalDevice supports the Vulkan 1.3 API version
@@ -406,7 +314,7 @@ class VulkanGameEngineApplication
 		const vk::QueueFlags flags = queueFamilies[index].queueFlags;
 		if ((flags & vk::QueueFlagBits::eGraphics) &&
 			(flags & vk::QueueFlagBits::eCompute) &&
-			physicalDevice.getSurfaceSupportKHR(index, *surface))
+			physicalDevice.getSurfaceSupportKHR(index, *vulkan.surface()))
 		{
 			supportsGraphicsComputePresent = true;
 			break;
@@ -443,7 +351,7 @@ class VulkanGameEngineApplication
 
 	void pickPhysicalDevice()
   {
-    std::vector<vk::raii::PhysicalDevice> physicalDevices = instance.enumeratePhysicalDevices();
+    std::vector<vk::raii::PhysicalDevice> physicalDevices = vulkan.instance().enumeratePhysicalDevices();
     auto const devIter = std::ranges::find_if( physicalDevices, [&]( auto const & physicalDevice ) { return isDeviceSuitable( physicalDevice ); } );
     if ( devIter == physicalDevices.end() )
     {
@@ -462,7 +370,7 @@ class VulkanGameEngineApplication
 		{
 			if ((queueFamilyProperties[qfpIndex].queueFlags & vk::QueueFlagBits::eGraphics) &&
 				(queueFamilyProperties[qfpIndex].queueFlags & vk::QueueFlagBits::eCompute) &&
-			    physicalDevice.getSurfaceSupportKHR(qfpIndex, *surface))
+			    physicalDevice.getSurfaceSupportKHR(qfpIndex, *vulkan.surface()))
 			{
 				// found a queue family that supports both graphics and present
 				queueIndex = qfpIndex;
@@ -501,10 +409,10 @@ class VulkanGameEngineApplication
 
 	void createSwapChain()
 	{
-		auto surfaceCapabilities = physicalDevice.getSurfaceCapabilitiesKHR(*surface);
+		auto surfaceCapabilities = physicalDevice.getSurfaceCapabilitiesKHR(*vulkan.surface());
 		swapChainExtent          = chooseSwapExtent(surfaceCapabilities);
-		swapChainSurfaceFormat   = chooseSwapSurfaceFormat(physicalDevice.getSurfaceFormatsKHR(*surface));
-		vk::SwapchainCreateInfoKHR swapChainCreateInfo{.surface          = *surface,
+		swapChainSurfaceFormat   = chooseSwapSurfaceFormat(physicalDevice.getSurfaceFormatsKHR(*vulkan.surface()));
+		vk::SwapchainCreateInfoKHR swapChainCreateInfo{.surface          = *vulkan.surface(),
 		                                               .minImageCount    = chooseSwapMinImageCount(surfaceCapabilities),
 		                                               .imageFormat      = swapChainSurfaceFormat.format,
 		                                               .imageColorSpace  = swapChainSurfaceFormat.colorSpace,
@@ -514,7 +422,7 @@ class VulkanGameEngineApplication
 		                                               .imageSharingMode = vk::SharingMode::eExclusive,
 		                                               .preTransform     = surfaceCapabilities.currentTransform,
 		                                               .compositeAlpha   = vk::CompositeAlphaFlagBitsKHR::eOpaque,
-		                                               .presentMode      = chooseSwapPresentMode(physicalDevice.getSurfacePresentModesKHR(*surface)),
+		                                               .presentMode      = chooseSwapPresentMode(physicalDevice.getSurfacePresentModesKHR(*vulkan.surface())),
 		                                               .clipped          = true};
 
 		swapChain       = vk::raii::SwapchainKHR(device, swapChainCreateInfo);
@@ -1830,30 +1738,6 @@ class VulkanGameEngineApplication
 		return {
 		    std::clamp<uint32_t>(width, capabilities.minImageExtent.width, capabilities.maxImageExtent.width),
 		    std::clamp<uint32_t>(height, capabilities.minImageExtent.height, capabilities.maxImageExtent.height)};
-	}
-
-	std::vector<const char *> getRequiredInstanceExtensions()
-	{
-		uint32_t glfwExtensionCount = 0;
-		auto     glfwExtensions     = glfwGetRequiredInstanceExtensions(&glfwExtensionCount);
-
-		std::vector extensions(glfwExtensions, glfwExtensions + glfwExtensionCount);
-		if (enableValidationLayers)
-		{
-			extensions.push_back(vk::EXTDebugUtilsExtensionName);
-		}
-
-		return extensions;
-	}
-
-	static VKAPI_ATTR vk::Bool32 VKAPI_CALL debugCallback(vk::DebugUtilsMessageSeverityFlagBitsEXT severity, vk::DebugUtilsMessageTypeFlagsEXT type, const vk::DebugUtilsMessengerCallbackDataEXT *pCallbackData, void *)
-	{
-		if (severity == vk::DebugUtilsMessageSeverityFlagBitsEXT::eError || severity == vk::DebugUtilsMessageSeverityFlagBitsEXT::eWarning)
-		{
-			std::cerr << "validation layer: type " << to_string(type) << " msg: " << pCallbackData->pMessage << std::endl;
-		}
-
-		return vk::False;
 	}
 
 	static std::vector<char> readFile(const std::string &filename)
