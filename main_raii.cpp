@@ -19,6 +19,7 @@
 #include <chrono>
 
 #include "Engine/Platform/Window.h"
+#include "Engine/Renderer/RenderTargetResources.h"
 #include "Engine/Renderer/SwapchainResources.h"
 #include "Engine/Vulkan/VulkanContext.h"
 
@@ -172,6 +173,11 @@ class VulkanGameEngineApplication
 	const vk::SurfaceFormatKHR&      swapChainSurfaceFormat = swapchainResources.surfaceFormat();
 	const vk::Extent2D&              swapChainExtent = swapchainResources.extent();
 	const std::vector<vk::raii::ImageView>& swapChainImageViews = swapchainResources.imageViews();
+	RenderTargetResources            renderTargets{vulkan, swapchainResources};
+	vk::raii::Image&                 depthImage = renderTargets.depthImage();
+	vk::raii::ImageView&             depthImageView = renderTargets.depthImageView();
+	vk::raii::Image&                 colorImage = renderTargets.colorImage();
+	vk::raii::ImageView&             colorImageView = renderTargets.colorImageView();
 
 	vk::raii::DescriptorSetLayout descriptorSetLayout = nullptr;
 	vk::raii::PipelineLayout pipelineLayout   = nullptr;
@@ -207,14 +213,6 @@ class VulkanGameEngineApplication
 	vk::raii::ImageView textureImageView = nullptr;
 	vk::raii::Sampler      textureSampler = nullptr;
 
-	vk::raii::Image        depthImage = nullptr;
-	vk::raii::DeviceMemory depthImageMemory = nullptr;
-	vk::raii::ImageView    depthImageView = nullptr;
-
-	vk::raii::Image        colorImage = nullptr;
-	vk::raii::DeviceMemory colorImageMemory = nullptr;
-	vk::raii::ImageView    colorImageView = nullptr;
-
 	vk::raii::CommandPool                commandPool = nullptr;
 	std::vector<vk::raii::CommandBuffer> commandBuffers;
 	std::vector<vk::raii::CommandBuffer> computeCommandBuffers;
@@ -239,8 +237,6 @@ class VulkanGameEngineApplication
 		createParticleGraphicsPipeline();
 		createComputePipeline();
 		createCommandPool();
-		createColorResources();
-		createDepthResources();
 		createTextureImage();
 		createTextureImageView();
 		createTextureSampler();
@@ -269,16 +265,6 @@ class VulkanGameEngineApplication
 		device.waitIdle();
 	}
 
-	void cleanupSwapChainAttachments()
-	{
-		colorImageView = nullptr;
-		colorImage = nullptr;
-		colorImageMemory = nullptr;
-		depthImageView = nullptr;
-		depthImage = nullptr;
-		depthImageMemory = nullptr;
-	}
-
 	void recreateSwapChain()
 	{
 		auto [width, height] = window.framebufferSize();
@@ -290,8 +276,8 @@ class VulkanGameEngineApplication
 
 		device.waitIdle();
 
-		cleanupSwapChainAttachments();
 		const bool formatChanged = swapchainResources.recreate();
+		renderTargets.recreate();
 		renderFinishedSemaphores.clear();
 		createRenderFinishedSemaphores();
 		if (formatChanged)
@@ -299,8 +285,6 @@ class VulkanGameEngineApplication
 			createGraphicsPipeline();
 			createParticleGraphicsPipeline();
 		}
-		createColorResources();
-		createDepthResources();
 	}
 
 	vk::raii::ImageView createImageView(vk::Image const& image, vk::Format format, vk::ImageAspectFlags aspectFlags, uint32_t mipLevels)
@@ -387,7 +371,7 @@ class VulkanGameEngineApplication
 		     .renderPass          = nullptr},
 		    {.colorAttachmentCount = 1,
 			 .pColorAttachmentFormats = &swapChainSurfaceFormat.format,
-			 .depthAttachmentFormat = findDepthFormat()}};
+			 .depthAttachmentFormat = renderTargets.depthFormat()}};
 
 		graphicsPipeline = vk::raii::Pipeline(device, nullptr, pipelineCreateInfoChain.get<vk::GraphicsPipelineCreateInfo>());
 	}
@@ -457,7 +441,7 @@ class VulkanGameEngineApplication
 			 .renderPass = nullptr},
 			{.colorAttachmentCount = 1,
 			 .pColorAttachmentFormats = &swapChainSurfaceFormat.format,
-			 .depthAttachmentFormat = findDepthFormat()}};
+			 .depthAttachmentFormat = renderTargets.depthFormat()}};
 		particleGraphicsPipeline = vk::raii::Pipeline(device, nullptr, pipelineChain.get<vk::GraphicsPipelineCreateInfo>());
 	}
 
@@ -481,49 +465,6 @@ class VulkanGameEngineApplication
 		vk::CommandPoolCreateInfo poolInfo{.flags            = vk::CommandPoolCreateFlagBits::eResetCommandBuffer,
 		                                   .queueFamilyIndex = queueIndex};
 		commandPool = vk::raii::CommandPool(device, poolInfo);
-	}
-
-	void createDepthResources()
-	{
-		vk::Format depthFormat = findDepthFormat();
-		std::tie(depthImage, depthImageMemory) = createImage(swapChainExtent.width, swapChainExtent.height, 1, msaaSamples, depthFormat, vk::ImageTiling::eOptimal, vk::ImageUsageFlagBits::eDepthStencilAttachment, vk::MemoryPropertyFlagBits::eDeviceLocal);
-		depthImageView = createImageView(depthImage, depthFormat, vk::ImageAspectFlagBits::eDepth, 1);
-	}
-
-	void createColorResources()
-	{
-		const vk::Format colorFormat = swapChainSurfaceFormat.format;
-		std::tie(colorImage, colorImageMemory) = createImage(
-			swapChainExtent.width,
-			swapChainExtent.height,
-			1,
-			msaaSamples,
-			colorFormat,
-			vk::ImageTiling::eOptimal,
-			vk::ImageUsageFlagBits::eTransientAttachment | vk::ImageUsageFlagBits::eColorAttachment,
-			vk::MemoryPropertyFlagBits::eDeviceLocal);
-		colorImageView = createImageView(colorImage, colorFormat, vk::ImageAspectFlagBits::eColor, 1);
-	}
-
-	vk::Format findSupportedFormat(const std::vector<vk::Format>& candidates, vk::ImageTiling tiling, vk::FormatFeatureFlags features)
-	{
-		for (const auto format : candidates) {
-			vk::FormatProperties props = physicalDevice.getFormatProperties(format);
-			if (((tiling == vk::ImageTiling::eLinear) && ((props.linearTilingFeatures & features) == features)) ||
-				((tiling == vk::ImageTiling::eOptimal) && ((props.optimalTilingFeatures & features) == features)))
-			{
-				return format;
-			}
-		}
-
-		throw std::runtime_error("failed to find supported format!");
-	}
-
-	vk::Format findDepthFormat()
-	{
-		return findSupportedFormat({ vk::Format::eD32Sfloat, vk::Format::eD32SfloatS8Uint, vk::Format::eD24UnormS8Uint },
-			vk::ImageTiling::eOptimal,
-			vk::FormatFeatureFlagBits::eDepthStencilAttachment);
 	}
 
 	void createTextureImage()

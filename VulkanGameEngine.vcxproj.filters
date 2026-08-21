@@ -37,12 +37,18 @@
     <ClCompile Include="Engine\Renderer\SwapchainResources.cpp">
       <Filter>Engine\Renderer</Filter>
     </ClCompile>
+    <ClCompile Include="Engine\Renderer\RenderTargetResources.cpp">
+      <Filter>Engine\Renderer</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Engine\Platform\Window.h">
       <Filter>Engine\Platform</Filter>
     </ClInclude>
     <ClInclude Include="Engine\Renderer\SwapchainResources.h">
+      <Filter>Engine\Renderer</Filter>
+    </ClInclude>
+    <ClInclude Include="Engine\Renderer\RenderTargetResources.h">
       <Filter>Engine\Renderer</Filter>
     </ClInclude>
     <ClInclude Include="Engine\Vulkan\VulkanContext.h">
