@@ -13,7 +13,7 @@ class BufferAllocation final
 
 	BufferAllocation(const BufferAllocation&) = delete;
 	BufferAllocation& operator=(const BufferAllocation&) = delete;
-	BufferAllocation(BufferAllocation&&) = delete;
+	BufferAllocation(BufferAllocation&&) noexcept = default;
 	BufferAllocation& operator=(BufferAllocation&&) = delete;
 
 	[[nodiscard]] vk::raii::Buffer& buffer() noexcept;

@@ -196,8 +196,7 @@ class VulkanGameEngineApplication
 	vk::DeviceSize         vertexBufferOffset   = 0;
 	vk::DeviceSize         indexBufferOffset    = 0;
 
-	std::vector<vk::raii::DeviceMemory> particleBufferMemories;
-	std::vector<vk::raii::Buffer>       particleBuffers;
+	std::vector<BufferAllocation> particleBuffers;
 	std::vector<vk::raii::DeviceMemory> computeUniformBufferMemories;
 	std::vector<vk::raii::Buffer>       computeUniformBuffers;
 	std::vector<void*>                   computeUniformBuffersMapped;
@@ -937,27 +936,25 @@ class VulkanGameEngineApplication
 		}
 
 		const vk::DeviceSize bufferSize = sizeof(Particle) * particles.size();
-		auto [stagingBuffer, stagingMemory] = createBuffer(
+		BufferAllocation stagingBuffer{
+			vulkan,
 			bufferSize,
 			vk::BufferUsageFlagBits::eTransferSrc,
-			vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent);
-		void* mapped = stagingMemory.mapMemory(0, bufferSize);
+			vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent};
+		void* mapped = stagingBuffer.memory().mapMemory(0, bufferSize);
 		memcpy(mapped, particles.data(), static_cast<std::size_t>(bufferSize));
-		stagingMemory.unmapMemory();
+		stagingBuffer.memory().unmapMemory();
 
 		particleBuffers.clear();
-		particleBufferMemories.clear();
 		particleBuffers.reserve(MAX_FRAMES_IN_FLIGHT);
-		particleBufferMemories.reserve(MAX_FRAMES_IN_FLIGHT);
 		for (uint32_t frame = 0; frame < MAX_FRAMES_IN_FLIGHT; ++frame)
 		{
-			auto [buffer, memory] = createBuffer(
+			particleBuffers.emplace_back(
+				vulkan,
 				bufferSize,
 				vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eVertexBuffer | vk::BufferUsageFlagBits::eTransferDst,
 				vk::MemoryPropertyFlagBits::eDeviceLocal);
-			copyBuffer(stagingBuffer, buffer, bufferSize);
-			particleBufferMemories.emplace_back(std::move(memory));
-			particleBuffers.emplace_back(std::move(buffer));
+			copyBuffer(stagingBuffer.buffer(), particleBuffers.back().buffer(), bufferSize);
 		}
 	}
 
@@ -1091,11 +1088,11 @@ class VulkanGameEngineApplication
 				.offset = 0,
 				.range = sizeof(ComputeUniformBufferObject)};
 			vk::DescriptorBufferInfo inputInfo{
-				.buffer = particleBuffers[previousFrame],
+				.buffer = *particleBuffers[previousFrame].buffer(),
 				.offset = 0,
 				.range = particleBufferSize};
 			vk::DescriptorBufferInfo outputInfo{
-				.buffer = particleBuffers[frame],
+				.buffer = *particleBuffers[frame].buffer(),
 				.offset = 0,
 				.range = particleBufferSize};
 
@@ -1172,7 +1169,7 @@ class VulkanGameEngineApplication
 			.dstAccessMask = vk::AccessFlagBits2::eShaderRead | vk::AccessFlagBits2::eVertexAttributeRead,
 			.srcQueueFamilyIndex = vk::QueueFamilyIgnored,
 			.dstQueueFamilyIndex = vk::QueueFamilyIgnored,
-			.buffer = particleBuffers[frameIndex],
+			.buffer = *particleBuffers[frameIndex].buffer(),
 			.offset = 0,
 			.size = vk::WholeSize};
 		vk::DependencyInfo particleDependency{
@@ -1270,7 +1267,7 @@ class VulkanGameEngineApplication
 		}
 
 		commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, *particleGraphicsPipeline);
-		commandBuffer.bindVertexBuffers(0, *particleBuffers[frameIndex], {0});
+		commandBuffer.bindVertexBuffers(0, *particleBuffers[frameIndex].buffer(), {0});
 		commandBuffer.draw(PARTICLE_COUNT, 1, 0, 0);
 		commandBuffer.endRendering();
 		// After rendering, transition the swapchain image to PRESENT_SRC
