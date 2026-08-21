@@ -13,22 +13,31 @@
       <UniqueIdentifier>{67DA6AB6-F800-4c08-8B7A-83BB121AAD01}</UniqueIdentifier>
       <Extensions>rc;ico;cur;bmp;dlg;rc2;rct;bin;rgs;gif;jpg;jpeg;jpe;resx;tiff;tif;png;wav;mfcribbon-ms</Extensions>
     </Filter>
+    <Filter Include="Engine">
+      <UniqueIdentifier>{6E5167D7-59CA-4CA3-A288-4EEAE34B465C}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Engine\Platform">
+      <UniqueIdentifier>{307C3B84-2BEB-43EA-A0B2-1614466023E4}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Engine\Vulkan">
+      <UniqueIdentifier>{98B05178-0A17-4F36-AC9B-0640C81228EE}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="main_raii.cpp" />
-    <ClCompile Include="vulkan_context.cpp">
-      <Filter>File di origine</Filter>
+    <ClCompile Include="Engine\Vulkan\VulkanContext.cpp">
+      <Filter>Engine\Vulkan</Filter>
     </ClCompile>
-    <ClCompile Include="window.cpp">
-      <Filter>File di origine</Filter>
+    <ClCompile Include="Engine\Platform\Window.cpp">
+      <Filter>Engine\Platform</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="window.hpp">
-      <Filter>File di intestazione</Filter>
+    <ClInclude Include="Engine\Platform\Window.h">
+      <Filter>Engine\Platform</Filter>
     </ClInclude>
-    <ClInclude Include="vulkan_context.hpp">
-      <Filter>File di intestazione</Filter>
+    <ClInclude Include="Engine\Vulkan\VulkanContext.h">
+      <Filter>Engine\Vulkan</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>

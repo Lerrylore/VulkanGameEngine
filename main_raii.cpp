@@ -18,8 +18,8 @@
 #include <glm/gtc/matrix_transform.hpp>
 #include <chrono>
 
-#include "vulkan_context.hpp"
-#include "window.hpp"
+#include "Engine/Platform/Window.h"
+#include "Engine/Vulkan/VulkanContext.h"
 
 // STB Image implementation
 #define STB_IMAGE_IMPLEMENTATION
@@ -158,10 +158,12 @@ class VulkanGameEngineApplication
 	// the native window from which it was created.
 	Window                           window{WIDTH, HEIGHT, "Vulkan Game Engine"};
 	VulkanContext                    vulkan{window, enableValidationLayers};
-	vk::raii::PhysicalDevice         physicalDevice = nullptr;
-	vk::raii::Device                 device         = nullptr;
-	uint32_t                         queueIndex     = ~0;
-	vk::raii::Queue                  queue          = nullptr;
+	// Temporary non-owning aliases while rendering still lives in this class.
+	// VulkanContext remains the sole owner of the handles.
+	vk::raii::PhysicalDevice&        physicalDevice = vulkan.physicalDevice();
+	vk::raii::Device&                device = vulkan.device();
+	const uint32_t                   queueIndex = vulkan.queueFamilyIndex();
+	vk::raii::Queue&                 queue = vulkan.queue();
 	vk::raii::SwapchainKHR           swapChain      = nullptr;
 	std::vector<vk::Image>           swapChainImages;
 	vk::SurfaceFormatKHR             swapChainSurfaceFormat;
@@ -220,19 +222,14 @@ class VulkanGameEngineApplication
 	std::vector<vk::raii::Fence>     inFlightFences;
 	uint32_t                         frameIndex   = 0;
 
-	vk::SampleCountFlagBits msaaSamples = vk::SampleCountFlagBits::e1;
+	const vk::SampleCountFlagBits msaaSamples = vulkan.msaaSamples();
 	std::chrono::steady_clock::time_point lastParticleUpdate = std::chrono::steady_clock::now();
 
 	std::vector<Vertex>    vertices;
 	std::vector<uint32_t>  indices;
 
-	std::vector<const char *> requiredDeviceExtension = {
-	    vk::KHRSwapchainExtensionName};
-
 	void initVulkan()
 	{
-		pickPhysicalDevice();
-		createLogicalDevice();
 		createSwapChain();
 		createImageViews();
 		createDescriptorSetLayout();
@@ -299,112 +296,6 @@ class VulkanGameEngineApplication
 		createImageViews();
 		createColorResources();
 		createDepthResources();
-	}
-
-	bool isDeviceSuitable( vk::raii::PhysicalDevice const & physicalDevice )
-  {
-    // Check if the physicalDevice supports the Vulkan 1.3 API version
-    bool supportsVulkan1_3 = physicalDevice.getProperties().apiVersion >= VK_API_VERSION_1_3;
-
-	// Keep compute and graphics on one present-capable queue for this first implementation.
-	auto queueFamilies = physicalDevice.getQueueFamilyProperties();
-	bool supportsGraphicsComputePresent = false;
-	for (uint32_t index = 0; index < queueFamilies.size(); ++index)
-	{
-		const vk::QueueFlags flags = queueFamilies[index].queueFlags;
-		if ((flags & vk::QueueFlagBits::eGraphics) &&
-			(flags & vk::QueueFlagBits::eCompute) &&
-			physicalDevice.getSurfaceSupportKHR(index, *vulkan.surface()))
-		{
-			supportsGraphicsComputePresent = true;
-			break;
-		}
-	}
-
-    // Check if all required physicalDevice extensions are available
-    auto availableDeviceExtensions = physicalDevice.enumerateDeviceExtensionProperties();
-    bool supportsAllRequiredExtensions =
-      std::ranges::all_of( requiredDeviceExtension,
-                           [&availableDeviceExtensions]( auto const & requiredDeviceExtension )
-                           {
-                             return std::ranges::any_of( availableDeviceExtensions,
-                                                         [requiredDeviceExtension]( auto const & availableDeviceExtension )
-                                                         { return strcmp( availableDeviceExtension.extensionName, requiredDeviceExtension ) == 0; } );
-                           } );
-
-    // Check if the physicalDevice supports the required features
-    auto features                 = physicalDevice.template getFeatures2<vk::PhysicalDeviceFeatures2,
-                                                                         vk::PhysicalDeviceVulkan11Features,
-                                                                         vk::PhysicalDeviceVulkan13Features,
-                                                                         vk::PhysicalDeviceExtendedDynamicStateFeaturesEXT>();
-	bool supportsRequiredFeatures = features.template get<vk::PhysicalDeviceVulkan11Features>().shaderDrawParameters &&
-	                                    features.template get<vk::PhysicalDeviceVulkan13Features>().dynamicRendering &&
-	                                    features.template get<vk::PhysicalDeviceVulkan13Features>().synchronization2 &&
-	                                    features.template get<vk::PhysicalDeviceExtendedDynamicStateFeaturesEXT>().extendedDynamicState &&
-									features.template get<vk::PhysicalDeviceFeatures2>().features.samplerAnisotropy &&
-									features.template get<vk::PhysicalDeviceFeatures2>().features.sampleRateShading &&
-									features.template get<vk::PhysicalDeviceFeatures2>().features.largePoints;
-
-    // Return true if the physicalDevice meets all the criteria
-	return supportsVulkan1_3 && supportsGraphicsComputePresent && supportsAllRequiredExtensions && supportsRequiredFeatures;
-  }
-
-	void pickPhysicalDevice()
-  {
-    std::vector<vk::raii::PhysicalDevice> physicalDevices = vulkan.instance().enumeratePhysicalDevices();
-    auto const devIter = std::ranges::find_if( physicalDevices, [&]( auto const & physicalDevice ) { return isDeviceSuitable( physicalDevice ); } );
-    if ( devIter == physicalDevices.end() )
-    {
-      throw std::runtime_error( "failed to find a suitable GPU!" );
-    }
-    physicalDevice = *devIter;
-	msaaSamples = getMaxUsableSampleCount();
-  }
-
-	void createLogicalDevice()
-	{
-		std::vector<vk::QueueFamilyProperties> queueFamilyProperties = physicalDevice.getQueueFamilyProperties();
-
-		// get the first index into queueFamilyProperties which supports both graphics and present
-		for (uint32_t qfpIndex = 0; qfpIndex < queueFamilyProperties.size(); qfpIndex++)
-		{
-			if ((queueFamilyProperties[qfpIndex].queueFlags & vk::QueueFlagBits::eGraphics) &&
-				(queueFamilyProperties[qfpIndex].queueFlags & vk::QueueFlagBits::eCompute) &&
-			    physicalDevice.getSurfaceSupportKHR(qfpIndex, *vulkan.surface()))
-			{
-				// found a queue family that supports both graphics and present
-				queueIndex = qfpIndex;
-				break;
-			}
-		}
-		if (queueIndex == ~0)
-		{
-			throw std::runtime_error("Could not find a queue for graphics, compute, and present -> terminating");
-		}
-
-		// query for Vulkan 1.3 features
-		vk::StructureChain<vk::PhysicalDeviceFeatures2,
-		                   vk::PhysicalDeviceVulkan11Features,
-		                   vk::PhysicalDeviceVulkan13Features,
-		                   vk::PhysicalDeviceExtendedDynamicStateFeaturesEXT>
-		    featureChain = {
-		        {.features = {.sampleRateShading = true, .largePoints = true, .samplerAnisotropy = true}}, // vk::PhysicalDeviceFeatures2
-		        {.shaderDrawParameters = true},                              // vk::PhysicalDeviceVulkan11Features
-		        {.synchronization2 = true, .dynamicRendering = true},        // vk::PhysicalDeviceVulkan13Features
-		        {.extendedDynamicState = true}                           // vk::PhysicalDeviceExtendedDynamicStateFeaturesEX
-		    };
-
-		// create a Device
-		float                     queuePriority = 0.5f;
-		vk::DeviceQueueCreateInfo deviceQueueCreateInfo{.queueFamilyIndex = queueIndex, .queueCount = 1, .pQueuePriorities = &queuePriority};
-		vk::DeviceCreateInfo      deviceCreateInfo{.pNext                   = &featureChain.get<vk::PhysicalDeviceFeatures2>(),
-		                                           .queueCreateInfoCount    = 1,
-		                                           .pQueueCreateInfos       = &deviceQueueCreateInfo,
-		                                           .enabledExtensionCount   = static_cast<uint32_t>(requiredDeviceExtension.size()),
-		                                           .ppEnabledExtensionNames = requiredDeviceExtension.data()};
-
-		device = vk::raii::Device(physicalDevice, deviceCreateInfo);
-		queue  = vk::raii::Queue(device, queueIndex, 0);
 	}
 
 	void createSwapChain()
@@ -980,21 +871,6 @@ class VulkanGameEngineApplication
 		commandBuffer.begin(beginInfo);
 
 		return std::move(commandBuffer);
-	}
-
-	vk::SampleCountFlagBits getMaxUsableSampleCount()
-	{
-		vk::PhysicalDeviceProperties physicalDeviceProperties = physicalDevice.getProperties();
-
-		vk::SampleCountFlags counts = physicalDeviceProperties.limits.framebufferColorSampleCounts & physicalDeviceProperties.limits.framebufferDepthSampleCounts;
-		if (counts & vk::SampleCountFlagBits::e64) { return vk::SampleCountFlagBits::e64; }
-		if (counts & vk::SampleCountFlagBits::e32) { return vk::SampleCountFlagBits::e32; }
-		if (counts & vk::SampleCountFlagBits::e16) { return vk::SampleCountFlagBits::e16; }
-		if (counts & vk::SampleCountFlagBits::e8) { return vk::SampleCountFlagBits::e8; }
-		if (counts & vk::SampleCountFlagBits::e4) { return vk::SampleCountFlagBits::e4; }
-		if (counts & vk::SampleCountFlagBits::e2) { return vk::SampleCountFlagBits::e2; }
-
-		return vk::SampleCountFlagBits::e1;
 	}
 
 	void endSingleTimeCommands(vk::raii::CommandBuffer&& commandBuffer)
