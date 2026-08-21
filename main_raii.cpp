@@ -197,9 +197,8 @@ class VulkanGameEngineApplication
 	vk::DeviceSize         indexBufferOffset    = 0;
 
 	std::vector<BufferAllocation> particleBuffers;
-	std::vector<vk::raii::DeviceMemory> computeUniformBufferMemories;
-	std::vector<vk::raii::Buffer>       computeUniformBuffers;
-	std::vector<void*>                   computeUniformBuffersMapped;
+	std::vector<BufferAllocation> computeUniformBuffers;
+	std::vector<void*>            computeUniformBuffersMapped;
 
 	vk::raii::DescriptorPool descriptorPool = nullptr;
 	std::array<GameObject, MAX_OBJECTS> gameObjects;
@@ -999,15 +998,19 @@ class VulkanGameEngineApplication
 	void createComputeUniformBuffers()
 	{
 		const vk::DeviceSize bufferSize = sizeof(ComputeUniformBufferObject);
+		computeUniformBuffersMapped.clear();
+		computeUniformBuffers.clear();
+		computeUniformBuffers.reserve(MAX_FRAMES_IN_FLIGHT);
+		computeUniformBuffersMapped.reserve(MAX_FRAMES_IN_FLIGHT);
 		for (uint32_t frame = 0; frame < MAX_FRAMES_IN_FLIGHT; ++frame)
 		{
-			auto [buffer, memory] = createBuffer(
+			computeUniformBuffers.emplace_back(
+				vulkan,
 				bufferSize,
 				vk::BufferUsageFlagBits::eUniformBuffer,
 				vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent);
-			computeUniformBufferMemories.emplace_back(std::move(memory));
-			computeUniformBuffers.emplace_back(std::move(buffer));
-			computeUniformBuffersMapped.emplace_back(computeUniformBufferMemories.back().mapMemory(0, bufferSize));
+			computeUniformBuffersMapped.emplace_back(
+				computeUniformBuffers.back().memory().mapMemory(0, bufferSize));
 		}
 	}
 
@@ -1084,7 +1087,7 @@ class VulkanGameEngineApplication
 		{
 			const uint32_t previousFrame = (frame + MAX_FRAMES_IN_FLIGHT - 1) % MAX_FRAMES_IN_FLIGHT;
 			vk::DescriptorBufferInfo uniformInfo{
-				.buffer = computeUniformBuffers[frame],
+				.buffer = *computeUniformBuffers[frame].buffer(),
 				.offset = 0,
 				.range = sizeof(ComputeUniformBufferObject)};
 			vk::DescriptorBufferInfo inputInfo{
