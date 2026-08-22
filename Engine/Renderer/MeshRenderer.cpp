@@ -5,6 +5,7 @@
 #include "../Resources/MeshResource.h"
 #include "../Resources/TextureResource.h"
 #include "../Scene/MeshComponent.h"
+#include "../Scene/DirectionalLightComponent.h"
 #include "../Scene/Scene.h"
 #include "../Scene/TransformComponent.h"
 
@@ -25,6 +26,9 @@ struct MeshUniformBufferObject
 	glm::mat4 View;
 	glm::mat4 Projection;
 	glm::mat4 NormalMatrix;
+	glm::vec4 LightDirection;
+	glm::vec4 LightColorIntensity;
+	glm::vec4 MaterialBaseColorAmbient;
 };
 }
 
@@ -89,9 +93,19 @@ void MeshRenderer::Build(const Scene& scene)
 		components.push_back(&component);
 	});
 
+	std::vector<const DirectionalLightComponent*> lights;
+	scene.ForEachComponent<DirectionalLightComponent>([&lights](const DirectionalLightComponent& light)
+	{
+		lights.push_back(&light);
+	});
+
 	if (components.empty())
 	{
 		throw std::logic_error("MeshRenderer requires at least one MeshComponent");
+	}
+	if (lights.size() != 1)
+	{
+		throw std::logic_error("MeshRenderer requires exactly one DirectionalLightComponent");
 	}
 	if (components.size() > std::numeric_limits<uint32_t>::max() / FrameCount)
 	{
@@ -165,12 +179,14 @@ void MeshRenderer::Build(const Scene& scene)
 				Vulkan.device().updateDescriptorSets(writes, {});
 			}
 		}
+		DirectionalLight = lights.front();
 		bBuilt = true;
 	}
 	catch (...)
 	{
 		DrawResources.clear();
 		DescriptorPool = nullptr;
+		DirectionalLight = nullptr;
 		throw;
 	}
 }
@@ -186,6 +202,8 @@ void MeshRenderer::UpdateUniformBuffers(
 	for (std::size_t drawIndex = 0; drawIndex < DrawResources.size(); ++drawIndex)
 	{
 		auto& drawResources = DrawResources[drawIndex];
+		const auto& light = *DirectionalLight;
+		const auto& material = drawResources.Component->GetMaterial();
 		const float direction = drawIndex % 2 == 0 ? 1.0f : -1.0f;
 		const glm::mat4 model = drawResources.Component->GetTransform().ModelMatrix() * glm::rotate(
 				glm::mat4(1.0f),
@@ -195,7 +213,14 @@ void MeshRenderer::UpdateUniformBuffers(
 			.Model = model,
 			.View = view,
 			.Projection = projection,
-			.NormalMatrix = glm::inverseTranspose(model)};
+			.NormalMatrix = glm::inverseTranspose(model),
+			.LightDirection = glm::vec4(light.GetDirection(), 0.0f),
+			.LightColorIntensity = glm::vec4(light.GetColor(), light.GetIntensity()),
+			.MaterialBaseColorAmbient = glm::vec4(
+				material.GetBaseColor().r,
+				material.GetBaseColor().g,
+				material.GetBaseColor().b,
+				light.GetAmbientStrength())};
 		std::memcpy(
 			drawResources.UniformBuffersMapped[frameIndex],
 			&uniformBuffer,
@@ -237,6 +262,10 @@ void MeshRenderer::ValidateFrameIndex(uint32_t frameIndex) const
 	if (!bBuilt)
 	{
 		throw std::logic_error("MeshRenderer must be built before use");
+	}
+	if (DirectionalLight == nullptr)
+	{
+		throw std::logic_error("MeshRenderer has no directional light snapshot");
 	}
 	if (frameIndex >= FrameCount)
 	{

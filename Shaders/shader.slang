@@ -10,6 +10,9 @@ struct UniformBuffer {
     float4x4 view;
     float4x4 proj;
     float4x4 normalMatrix;
+    float4 lightDirection;
+    float4 lightColorIntensity;
+    float4 materialBaseColorAmbient;
 }
 ConstantBuffer<UniformBuffer> ubo;
 
@@ -35,7 +38,12 @@ VSOutput vertMain(VSInput input) {
 
 [shader("fragment")]
 float4 fragMain(VSOutput vertIn) : SV_TARGET {
+   float4 baseColor = texture.Sample(vertIn.fragTexCoord * 1.0);
    float3 worldNormal = normalize(vertIn.worldNormal);
-   float normalPathValidation = dot(worldNormal, worldNormal);
-   return texture.Sample(vertIn.fragTexCoord * 1.0) * lerp(1.0, normalPathValidation, 0.0);
+   float3 surfaceToLight = normalize(-ubo.lightDirection.xyz);
+   float diffuse = max(dot(worldNormal, surfaceToLight), 0.0);
+   float3 lighting = ubo.materialBaseColorAmbient.aaa +
+       diffuse * ubo.lightColorIntensity.rgb * ubo.lightColorIntensity.a;
+   float3 materialColor = baseColor.rgb * ubo.materialBaseColorAmbient.rgb;
+   return float4(materialColor * lighting, baseColor.a);
 }

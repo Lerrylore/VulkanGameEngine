@@ -9,6 +9,7 @@
 #include <vector>
 
 class Scene;
+class DirectionalLightComponent;
 
 class MeshRenderer final
 {
@@ -54,5 +55,7 @@ class MeshRenderer final
 	// Draw resources contain the descriptor sets and are destroyed first.
 	vk::raii::DescriptorPool DescriptorPool = nullptr;
 	std::vector<MeshDrawResources> DrawResources;
+	// Non-owning snapshot of the scene light. The Scene must outlive this renderer.
+	const DirectionalLightComponent* DirectionalLight = nullptr;
 	bool bBuilt = false;
 };

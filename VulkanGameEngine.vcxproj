@@ -144,6 +144,7 @@
     <ClCompile Include="Engine\Resources\TextureResource.cpp" />
     <ClCompile Include="Engine\Scene\CameraComponent.cpp" />
     <ClCompile Include="Engine\Scene\Component.cpp" />
+    <ClCompile Include="Engine\Scene\DirectionalLightComponent.cpp" />
     <ClCompile Include="Engine\Events\Event.cpp" />
     <ClCompile Include="Engine\Events\EventBus.cpp" />
     <ClCompile Include="Engine\Events\EventSubscription.cpp" />
@@ -169,6 +170,7 @@
     <ClInclude Include="Engine\Resources\TextureResource.h" />
     <ClInclude Include="Engine\Scene\CameraComponent.h" />
     <ClInclude Include="Engine\Scene\Component.h" />
+    <ClInclude Include="Engine\Scene\DirectionalLightComponent.h" />
     <ClInclude Include="Engine\Events\Event.h" />
     <ClInclude Include="Engine\Events\EventBus.h" />
     <ClInclude Include="Engine\Events\EventSubscription.h" />

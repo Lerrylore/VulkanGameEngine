@@ -29,6 +29,7 @@
 #include "Engine/Resources/TextureResource.h"
 #include "Engine/Services/ServiceLocator.h"
 #include "Engine/Scene/CameraComponent.h"
+#include "Engine/Scene/DirectionalLightComponent.h"
 #include "Engine/Scene/GameObject.h"
 #include "Engine/Scene/MeshComponent.h"
 #include "Engine/Scene/Scene.h"
@@ -703,7 +704,7 @@ class VulkanGameEngineApplication
 	void createDescriptorSetLayout() 
 	{
 		std::array<vk::DescriptorSetLayoutBinding, 2> bindings{
-			{{.binding = 0, .descriptorType = vk::DescriptorType::eUniformBuffer, .descriptorCount = 1, .stageFlags = vk::ShaderStageFlagBits::eVertex},
+			{{.binding = 0, .descriptorType = vk::DescriptorType::eUniformBuffer, .descriptorCount = 1, .stageFlags = vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment},
 			 {.binding = 1, .descriptorType = vk::DescriptorType::eCombinedImageSampler, .descriptorCount = 1, .stageFlags = vk::ShaderStageFlagBits::eFragment}} };
 
 		vk::DescriptorSetLayoutCreateInfo layoutInfo{ .bindingCount = static_cast<uint32_t>(bindings.size()), .pBindings = bindings.data() };
@@ -905,6 +906,13 @@ class VulkanGameEngineApplication
 	{
 		assert(meshResource.has_value());
 		assert(materialResource.has_value());
+
+		auto& lightObject = scene.CreateGameObject();
+		auto& directionalLight = lightObject.AddComponent<DirectionalLightComponent>();
+		directionalLight.SetDirection({-0.55f, -0.7f, -1.0f});
+		directionalLight.SetColor({1.0f, 0.93f, 0.82f});
+		directionalLight.SetIntensity(1.0f);
+		directionalLight.SetAmbientStrength(0.12f);
 
 		auto& centerObject = scene.CreateGameObject();
 		centerObject.GetTransform().SetPosition({0.0f, 0.0f, 0.0f});
