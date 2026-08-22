@@ -1285,7 +1285,12 @@ class VulkanGameEngineApplication
 		const glm::mat4 view = ActiveCamera->GetViewMatrix();
 		const glm::mat4 proj = ActiveCamera->GetProjectionMatrix();
 
-		MeshRendererInstance->UpdateUniformBuffers(currentImage, view, proj, time);
+		MeshRendererInstance->UpdateUniformBuffers(
+			currentImage,
+			view,
+			proj,
+			ActiveCamera->GetPosition(),
+			time);
 	}
 
 	[[nodiscard]] vk::raii::ShaderModule createShaderModule(const std::vector<char> &code) const

@@ -76,6 +76,12 @@ float CameraComponent::GetFarPlane() const noexcept
 	return FarPlane;
 }
 
+const glm::vec3& CameraComponent::GetPosition() const noexcept
+{
+	assert(Transform != nullptr);
+	return Transform->GetPosition();
+}
+
 glm::mat4 CameraComponent::GetViewMatrix() const
 {
 	assert(Transform != nullptr);

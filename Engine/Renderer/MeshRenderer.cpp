@@ -29,6 +29,8 @@ struct MeshUniformBufferObject
 	glm::vec4 LightDirection;
 	glm::vec4 LightColorIntensity;
 	glm::vec4 MaterialBaseColorAmbient;
+	glm::vec4 CameraPosition;
+	glm::vec4 MaterialSpecularShininess;
 };
 }
 
@@ -195,6 +197,7 @@ void MeshRenderer::UpdateUniformBuffers(
 	uint32_t frameIndex,
 	const glm::mat4& view,
 	const glm::mat4& projection,
+	const glm::vec3& cameraPosition,
 	float elapsedTime)
 {
 	ValidateFrameIndex(frameIndex);
@@ -220,7 +223,11 @@ void MeshRenderer::UpdateUniformBuffers(
 				material.GetBaseColor().r,
 				material.GetBaseColor().g,
 				material.GetBaseColor().b,
-				light.GetAmbientStrength())};
+				light.GetAmbientStrength()),
+			.CameraPosition = glm::vec4(cameraPosition, 1.0f),
+			.MaterialSpecularShininess = glm::vec4(
+				material.GetSpecularColor(),
+				material.GetShininess())};
 		std::memcpy(
 			drawResources.UniformBuffersMapped[frameIndex],
 			&uniformBuffer,

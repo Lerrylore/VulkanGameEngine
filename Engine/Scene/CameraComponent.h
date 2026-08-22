@@ -21,6 +21,7 @@ class CameraComponent final : public Component
 	[[nodiscard]] float GetAspectRatio() const noexcept;
 	[[nodiscard]] float GetNearPlane() const noexcept;
 	[[nodiscard]] float GetFarPlane() const noexcept;
+	[[nodiscard]] const glm::vec3& GetPosition() const noexcept;
 	[[nodiscard]] glm::mat4 GetViewMatrix() const;
 	[[nodiscard]] glm::mat4 GetProjectionMatrix() const;
 

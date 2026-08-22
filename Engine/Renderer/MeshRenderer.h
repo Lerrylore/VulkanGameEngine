@@ -34,6 +34,7 @@ class MeshRenderer final
 		uint32_t frameIndex,
 		const glm::mat4& view,
 		const glm::mat4& projection,
+		const glm::vec3& cameraPosition,
 		float elapsedTime);
 	void RecordDraws(
 		vk::raii::CommandBuffer& commandBuffer,
