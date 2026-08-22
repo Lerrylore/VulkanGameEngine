@@ -24,8 +24,8 @@
 #include "Engine/Renderer/RenderTargetResources.h"
 #include "Engine/Renderer/SwapchainResources.h"
 #include "Engine/Resources/BufferAllocation.h"
-#include "Engine/Resources/ImageAllocation.h"
 #include "Engine/Resources/MeshResource.h"
+#include "Engine/Resources/TextureResource.h"
 #include "Engine/Scene/GameObject.h"
 #include "Engine/Vulkan/VulkanContext.h"
 
@@ -179,6 +179,7 @@ class VulkanGameEngineApplication
 	vk::raii::Pipeline            computePipeline = nullptr;
 
 	std::optional<MeshResource> meshResource;
+	std::optional<TextureResource> textureResource;
 
 	std::vector<BufferAllocation> particleBuffers;
 	std::vector<BufferAllocation> computeUniformBuffers;
@@ -188,11 +189,6 @@ class VulkanGameEngineApplication
 	std::array<RenderableGameObject, MAX_OBJECTS> gameObjects;
 	vk::raii::DescriptorPool computeDescriptorPool = nullptr;
 	std::vector<vk::raii::DescriptorSet> computeDescriptorSets;
-
-	uint32_t               mipLevels = 0;
-	std::optional<ImageAllocation> textureImage;
-	vk::raii::ImageView textureImageView = nullptr;
-	vk::raii::Sampler      textureSampler = nullptr;
 
 	FrameResources frameResources{vulkan, MAX_FRAMES_IN_FLIGHT, swapChainImages.size()};
 
@@ -210,8 +206,6 @@ class VulkanGameEngineApplication
 		createParticleGraphicsPipeline();
 		createComputePipeline();
 		createTextureImage();
-		createTextureImageView();
-		createTextureSampler();
 		loadModel();
 		createGeometryBuffer();
 		createParticleBuffers();
@@ -254,16 +248,6 @@ class VulkanGameEngineApplication
 			createGraphicsPipeline();
 			createParticleGraphicsPipeline();
 		}
-	}
-
-	vk::raii::ImageView createImageView(vk::Image const& image, vk::Format format, vk::ImageAspectFlags aspectFlags, uint32_t mipLevels)
-	{
-		vk::ImageViewCreateInfo viewInfo{
-			.image = image,
-			.viewType = vk::ImageViewType::e2D,
-			.format = format,
-			.subresourceRange = {.aspectMask = aspectFlags, .baseMipLevel = 0, .levelCount = mipLevels, .baseArrayLayer = 0, .layerCount = 1} };
-		return vk::raii::ImageView(device, viewInfo);
 	}
 
 	void createComputeDescriptorSetLayout()
@@ -440,7 +424,8 @@ class VulkanGameEngineApplication
 
 		constexpr vk::Format textureFormat = vk::Format::eR8G8B8A8Srgb;
 		constexpr uint32_t bytesPerPixel = 4;
-		mipLevels = static_cast<uint32_t>(std::floor(std::log2(std::max(texWidth, texHeight)))) + 1;
+		const uint32_t mipLevels =
+			static_cast<uint32_t>(std::floor(std::log2(std::max(texWidth, texHeight)))) + 1;
 
 		const vk::FormatProperties formatProperties = physicalDevice.getFormatProperties(textureFormat);
 		const vk::FormatFeatureFlags requiredBlitFeatures =
@@ -514,26 +499,20 @@ class VulkanGameEngineApplication
 
 		stbi_image_free(pixels);
 
-		textureImage.emplace(
+		textureResource.emplace(
 			vulkan,
 			static_cast<uint32_t>(texWidth),
 			static_cast<uint32_t>(texHeight),
 			mipLevels,
-			vk::SampleCountFlagBits::e1,
-			textureFormat,
-			vk::ImageTiling::eOptimal,
-			vk::ImageUsageFlagBits::eTransferSrc |
-				vk::ImageUsageFlagBits::eTransferDst |
-				vk::ImageUsageFlagBits::eSampled,
-			vk::MemoryPropertyFlagBits::eDeviceLocal);
-		auto& image = textureImage->image();
+			textureFormat);
+		auto& image = textureResource->image();
 
 		vk::raii::CommandBuffer commandBuffer = beginSingleTimeCommands();
-		transitionImageLayout(commandBuffer, image, vk::ImageLayout::eUndefined, vk::ImageLayout::eTransferDstOptimal, mipLevels);
+		transitionImageLayout(commandBuffer, image, vk::ImageLayout::eUndefined, vk::ImageLayout::eTransferDstOptimal, textureResource->mipLevels());
 		if (supportsLinearBlit)
 		{
 			copyBufferToImage(commandBuffer, stagingBuffer.buffer(), image, static_cast<uint32_t>(texWidth), static_cast<uint32_t>(texHeight));
-			generateMipmaps(commandBuffer, image, textureFormat, texWidth, texHeight, mipLevels);
+			generateMipmaps(commandBuffer, image, textureFormat, texWidth, texHeight, textureResource->mipLevels());
 		}
 		else
 		{
@@ -555,7 +534,7 @@ class VulkanGameEngineApplication
 					.imageExtent = {mip.width, mip.height, 1}});
 			}
 			commandBuffer.copyBufferToImage(*stagingBuffer.buffer(), image, vk::ImageLayout::eTransferDstOptimal, regions);
-			transitionImageLayout(commandBuffer, image, vk::ImageLayout::eTransferDstOptimal, vk::ImageLayout::eShaderReadOnlyOptimal, mipLevels);
+			transitionImageLayout(commandBuffer, image, vk::ImageLayout::eTransferDstOptimal, vk::ImageLayout::eShaderReadOnlyOptimal, textureResource->mipLevels());
 		}
 		endSingleTimeCommands(std::move(commandBuffer));
 	}
@@ -643,36 +622,6 @@ class VulkanGameEngineApplication
 			{}, {}, {}, barrier);
 	}
 
-	void createTextureImageView()
-	{
-		textureImageView = createImageView(*textureImage->image(), vk::Format::eR8G8B8A8Srgb, vk::ImageAspectFlagBits::eColor, mipLevels);
-	}
-
-	void createTextureSampler()
-	{
-		vk::PhysicalDeviceProperties properties = physicalDevice.getProperties();
-		vk::SamplerCreateInfo        samplerInfo{ .magFilter = vk::Filter::eLinear,
-												 .minFilter = vk::Filter::eLinear,
-												 .mipmapMode = vk::SamplerMipmapMode::eLinear,
-												 .addressModeU = vk::SamplerAddressMode::eRepeat,
-												 .addressModeV = vk::SamplerAddressMode::eRepeat,
-												 .addressModeW = vk::SamplerAddressMode::eRepeat,
-												 .anisotropyEnable = vk::True,
-												 .maxAnisotropy = properties.limits.maxSamplerAnisotropy,
-												 .compareEnable = vk::False,
-												 .compareOp = vk::CompareOp::eAlways };
-		samplerInfo.borderColor = vk::BorderColor::eIntOpaqueBlack;
-		samplerInfo.unnormalizedCoordinates = vk::False;
-		samplerInfo.compareEnable = vk::False;
-		samplerInfo.compareOp = vk::CompareOp::eAlways;
-		samplerInfo.mipmapMode = vk::SamplerMipmapMode::eLinear;
-		samplerInfo.mipLodBias = 0.0f;
-		samplerInfo.minLod = 0.0f;
-		samplerInfo.maxLod = static_cast<float>(mipLevels);
-
-		textureSampler = vk::raii::Sampler(device, samplerInfo);
-	}
-	
 	void transitionImageLayout(vk::raii::CommandBuffer& commandBuffer, const vk::raii::Image& image, vk::ImageLayout oldLayout, vk::ImageLayout newLayout, uint32_t mipLevels)
 	{
 		vk::PipelineStageFlags sourceStage;
@@ -1009,7 +958,10 @@ class VulkanGameEngineApplication
 			for (size_t frame = 0; frame < MAX_FRAMES_IN_FLIGHT; ++frame)
 			{
 				vk::DescriptorBufferInfo bufferInfo{ .buffer = *gameObject.uniformBuffers[frame].buffer(), .offset = 0, .range = sizeof(UniformBufferObject) };
-				vk::DescriptorImageInfo  imageInfo{ .sampler = textureSampler, .imageView = textureImageView, .imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal };
+				vk::DescriptorImageInfo imageInfo{
+					.sampler = *textureResource->sampler(),
+					.imageView = *textureResource->imageView(),
+					.imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal};
 
 				std::array<vk::WriteDescriptorSet, 2> descriptorWrites{ {{.dstSet = gameObject.descriptorSets[frame],
 																	 .dstBinding = 0,
