@@ -8,7 +8,7 @@ class ApplicationConfig final
   public:
 	static constexpr uint32_t WindowWidth = 800;
 	static constexpr uint32_t WindowHeight = 600;
-	static constexpr uint32_t ParticleCount = 8192;
+	static constexpr uint32_t ParticleCount = 2048;
 	static constexpr uint32_t ComputeWorkgroupSize = 256;
 	static constexpr uint32_t MaxFramesInFlight = 2;
 
