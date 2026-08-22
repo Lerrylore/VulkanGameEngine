@@ -237,5 +237,7 @@ float4 fragMain(VSOutput vertIn) : SV_TARGET {
        return float4(emissive, 1.0);
    }
 
-   return float4(ambientLighting + directLighting + emissive, baseColor.a);
+   // Hot-reload exercise: change this tint, then rebuild Shaders/compile.bat.
+   const float3 hotReloadTint = float3(1.0, 1.0, 1.0);
+   return float4((ambientLighting + directLighting + emissive) * hotReloadTint, baseColor.a);
 }

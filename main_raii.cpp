@@ -356,6 +356,7 @@ class VulkanGameEngineApplication
 				device.waitIdle();
 				for (const auto& resource : reloadedResources)
 				{
+					std::clog << "[HotReload] Reloaded " << resource.ResourceId << '\n';
 					const auto callback = ResourceReloadCallbacks.find(resource.ResourceId);
 					if (callback != ResourceReloadCallbacks.end())
 					{
