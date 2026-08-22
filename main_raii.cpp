@@ -12,7 +12,6 @@
 #include <unordered_map>
 #include <vector>
 #include <tiny_obj_loader.h>
-#define GLM_FORCE_DEPTH_ZERO_TO_ONE
 #include <glm/glm.hpp>
 #include <glm/gtc/constants.hpp>
 #include <glm/gtc/matrix_transform.hpp>
@@ -25,6 +24,7 @@
 #include "Engine/Resources/BufferAllocation.h"
 #include "Engine/Resources/MeshResource.h"
 #include "Engine/Resources/TextureResource.h"
+#include "Engine/Scene/CameraComponent.h"
 #include "Engine/Scene/GameObject.h"
 #include "Engine/Scene/MeshComponent.h"
 #include "Engine/Scene/Scene.h"
@@ -185,6 +185,7 @@ class VulkanGameEngineApplication
 	std::vector<void*>            computeUniformBuffersMapped;
 
 	Scene scene;
+	CameraComponent* ActiveCamera = nullptr;
 	vk::raii::DescriptorPool descriptorPool = nullptr;
 	std::array<RenderObjectResources, MAX_OBJECTS> RenderObjects;
 	vk::raii::DescriptorPool computeDescriptorPool = nullptr;
@@ -234,6 +235,7 @@ class VulkanGameEngineApplication
 
 		device.waitIdle();
 		scene.Destroy();
+		ActiveCamera = nullptr;
 	}
 
 	void recreateSwapChain()
@@ -248,6 +250,10 @@ class VulkanGameEngineApplication
 		device.waitIdle();
 
 		const bool formatChanged = swapchainResources.recreate();
+		assert(ActiveCamera != nullptr);
+		ActiveCamera->SetAspectRatio(
+			static_cast<float>(swapChainExtent.width) /
+			static_cast<float>(swapChainExtent.height));
 		renderTargets.recreate();
 		frameResources.recreateSwapchainImages(swapChainImages.size());
 		if (formatChanged)
@@ -903,6 +909,17 @@ class VulkanGameEngineApplication
 		rightObject.GetTransform().SetRotation({0.0f, 0.0f, glm::radians(25.0f)});
 		rightObject.GetTransform().SetScale({0.55f, 0.55f, 0.55f});
 		RenderObjects[2].Component = &rightObject.AddComponent<MeshComponent>(*meshResource);
+
+		auto& cameraObject = scene.CreateGameObject();
+		cameraObject.GetTransform().SetPosition({2.8f, 2.8f, 3.5f});
+		ActiveCamera = &cameraObject.AddComponent<CameraComponent>();
+		ActiveCamera->SetTarget({0.0f, 0.0f, 0.0f});
+		ActiveCamera->SetUp({0.0f, 0.0f, 1.0f});
+		ActiveCamera->SetFieldOfView(45.0f);
+		ActiveCamera->SetAspectRatio(
+			static_cast<float>(swapChainExtent.width) /
+			static_cast<float>(swapChainExtent.height));
+		ActiveCamera->SetClipPlanes(0.1f, 10.0f);
 	}
 
 	void createUniformBuffers()
@@ -1325,16 +1342,9 @@ class VulkanGameEngineApplication
 		auto currentTime = std::chrono::high_resolution_clock::now();
 		float time = std::chrono::duration<float, std::chrono::seconds::period>(currentTime - startTime).count();
 
-		const glm::mat4 view = lookAt(
-			glm::vec3(2.8f, 2.8f, 3.5f),
-			glm::vec3(0.0f, 0.0f, 0.0f),
-			glm::vec3(0.0f, 0.0f, 1.0f));
-		glm::mat4 proj = glm::perspective(
-			glm::radians(45.0f),
-			static_cast<float>(swapChainExtent.width) / static_cast<float>(swapChainExtent.height),
-			0.1f,
-			10.0f);
-		proj[1][1] *= -1;
+		assert(ActiveCamera != nullptr && ActiveCamera->IsActive());
+		const glm::mat4 view = ActiveCamera->GetViewMatrix();
+		const glm::mat4 proj = ActiveCamera->GetProjectionMatrix();
 
 		for (size_t objectIndex = 0; objectIndex < RenderObjects.size(); ++objectIndex)
 		{
