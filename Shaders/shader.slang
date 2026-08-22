@@ -17,6 +17,8 @@ struct UniformBuffer {
     float4 materialBaseColorAmbient;
     float4 cameraPosition;
     float4 materialMetallicRoughness;
+    float4 materialOcclusion;
+    float4 materialEmissive;
     float4 debugView;
     float4 shadowMapParameters;
 }
@@ -143,6 +145,9 @@ float4 fragMain(VSOutput vertIn) : SV_TARGET {
        ubo.shadowMapParameters.z,
        ubo.shadowMapParameters.w * (1.0 - lightFacing));
    float shadowVisibility = CalculateShadowVisibility(shadowCoordinates, shadowBias);
+   float shadowDepth = shadowCoordinates.z >= 0.0 && shadowCoordinates.z <= 1.0
+       ? shadowMap.Sample(shadowCoordinates.xy).r
+       : 1.0;
    float normalLight = max(dot(worldNormal, surfaceToLight), 0.0);
    float normalView = max(dot(worldNormal, surfaceToCamera), 0.0);
    float4 metallicRoughnessSample = metallicRoughnessMap.Sample(vertIn.fragTexCoord * 1.0);
@@ -154,6 +159,11 @@ float4 fragMain(VSOutput vertIn) : SV_TARGET {
        metallicRoughnessSample.g * ubo.materialMetallicRoughness.y,
        0.04,
        1.0);
+   float occlusion = clamp(
+       metallicRoughnessSample.r * ubo.materialOcclusion.x,
+       0.0,
+       1.0);
+   float3 emissive = ubo.materialEmissive.rgb * ubo.materialEmissive.a;
    float3 albedo = baseColor.rgb * ubo.materialBaseColorAmbient.rgb;
 
    uint debugView = (uint)ubo.debugView.x;
@@ -189,6 +199,10 @@ float4 fragMain(VSOutput vertIn) : SV_TARGET {
    {
        return float4(EncodeNormal(worldTangent), 1.0);
    }
+   if (debugView == 9)
+   {
+       return float4(shadowDepth.xxx, 1.0);
+   }
 
    float3 baseReflectivity = lerp(float3(0.04), albedo, metallic);
    float3 fresnel = FresnelSchlick(max(dot(halfway, surfaceToCamera), 0.0), baseReflectivity);
@@ -200,6 +214,28 @@ float4 fragMain(VSOutput vertIn) : SV_TARGET {
    float3 diffuse = diffuseRatio * albedo / PI;
    float3 radiance = ubo.lightColorIntensity.rgb * ubo.lightColorIntensity.a;
    float3 directLighting = (diffuse + specular) * radiance * normalLight * shadowVisibility;
-   float3 ambientLighting = ubo.materialBaseColorAmbient.aaa * diffuseRatio * albedo;
-   return float4(ambientLighting + directLighting, baseColor.a);
+   float3 ambientLighting = ubo.materialBaseColorAmbient.aaa * diffuseRatio * albedo * occlusion;
+
+   if (debugView == 10)
+   {
+       return float4(diffuse, 1.0);
+   }
+   if (debugView == 11)
+   {
+       return float4(specular / (specular + 1.0), 1.0);
+   }
+   if (debugView == 12)
+   {
+       return float4(fresnel, 1.0);
+   }
+   if (debugView == 13)
+   {
+       return float4(occlusion.xxx, 1.0);
+   }
+   if (debugView == 14)
+   {
+       return float4(emissive, 1.0);
+   }
+
+   return float4(ambientLighting + directLighting + emissive, baseColor.a);
 }

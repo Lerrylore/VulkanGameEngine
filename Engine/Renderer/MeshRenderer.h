@@ -22,7 +22,13 @@ enum class DebugViewMode : uint32_t
 	Shadow = 5,
 	Albedo = 6,
 	GeometricNormal = 7,
-	Tangent = 8
+	Tangent = 8,
+	ShadowDepth = 9,
+	Diffuse = 10,
+	Specular = 11,
+	Fresnel = 12,
+	AmbientOcclusion = 13,
+	Emissive = 14
 };
 
 class MeshRenderer final

@@ -29,6 +29,10 @@ class MaterialResource final
 	void SetMetallic(float metallic);
 	[[nodiscard]] float GetRoughness() const noexcept;
 	void SetRoughness(float roughness);
+	[[nodiscard]] float GetOcclusionStrength() const noexcept;
+	void SetOcclusionStrength(float strength);
+	[[nodiscard]] const glm::vec4& GetEmissive() const noexcept;
+	void SetEmissive(const glm::vec4& emissive) noexcept;
 
   private:
 	// The texture owner must outlive every material that references it.
@@ -38,4 +42,6 @@ class MaterialResource final
 	glm::vec4 BaseColor{1.0f};
 	float Metallic = 0.0f;
 	float Roughness = 0.5f;
+	float OcclusionStrength = 1.0f;
+	glm::vec4 Emissive{0.0f};
 };

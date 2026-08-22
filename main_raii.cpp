@@ -50,6 +50,8 @@ constexpr uint32_t COMPUTE_WORKGROUP_SIZE = 256;
 constexpr int      MAX_FRAMES_IN_FLIGHT = 2;
 const std::string  MODEL_PATH = "Models/viking_room.obj";
 const std::string  TEXTURE_PATH = "Textures/viking_room.png";
+const std::string  NORMAL_TEXTURE_PATH = "Textures/viking_room_normal.png";
+const std::string  METALLIC_ROUGHNESS_TEXTURE_PATH = "Textures/viking_room_metallic_roughness.png";
 
 #ifdef NDEBUG
 constexpr bool enableValidationLayers = false;
@@ -217,9 +219,12 @@ class VulkanGameEngineApplication
 		createShadowGraphicsPipeline();
 		createParticleGraphicsPipeline();
 		createComputePipeline();
-		createTextureImage();
-		createProceduralNormalMapImage();
-		createProceduralMetallicRoughnessMapImage();
+		createTextureImage(textureResource, TEXTURE_PATH, vk::Format::eR8G8B8A8Srgb);
+		createTextureImage(normalMapResource, NORMAL_TEXTURE_PATH, vk::Format::eR8G8B8A8Unorm);
+		createTextureImage(
+			metallicRoughnessMapResource,
+			METALLIC_ROUGHNESS_TEXTURE_PATH,
+			vk::Format::eR8G8B8A8Unorm);
 		materialResource.emplace(*textureResource, *normalMapResource, *metallicRoughnessMapResource);
 		loadModel();
 		createGeometryBuffer();
@@ -232,7 +237,8 @@ class VulkanGameEngineApplication
 		createComputeDescriptorSets();
 		scene.Initialize();
 		std::clog << "[DebugView] 0 Lit, 1 WorldNormal, 2 TangentNormal, 3 Roughness, 4 Metallic, "
-			"5 Shadow, 6 Albedo, 7 GeometricNormal, 8 Tangent\n";
+			"5 Shadow, 6 Albedo, 7 GeometricNormal, 8 Tangent, 9 ShadowDepth, "
+			"F1 Diffuse, F2 Specular, F3 Fresnel, F4 AO, F5 Emissive\n";
 	}
 
 	void mainLoop()
@@ -508,16 +514,18 @@ class VulkanGameEngineApplication
 		computePipeline = vk::raii::Pipeline(device, nullptr, pipelineInfo);
 	}
 
-	void createTextureImage()
+	void createTextureImage(
+		std::optional<TextureResource>& destination,
+		const std::string& texturePath,
+		vk::Format textureFormat)
 	{
 		int            texWidth, texHeight, texChannels;
-		stbi_uc* pixels = stbi_load(TEXTURE_PATH.c_str(), &texWidth, &texHeight, &texChannels, STBI_rgb_alpha);
+		stbi_uc* pixels = stbi_load(texturePath.c_str(), &texWidth, &texHeight, &texChannels, STBI_rgb_alpha);
 		if (!pixels)
 		{
 			throw std::runtime_error("failed to load texture image!");
 		}
 
-		constexpr vk::Format textureFormat = vk::Format::eR8G8B8A8Srgb;
 		constexpr uint32_t bytesPerPixel = 4;
 		const uint32_t mipLevels =
 			static_cast<uint32_t>(std::floor(std::log2(std::max(texWidth, texHeight)))) + 1;
@@ -594,20 +602,20 @@ class VulkanGameEngineApplication
 
 		stbi_image_free(pixels);
 
-		textureResource.emplace(
+		destination.emplace(
 			vulkan,
 			static_cast<uint32_t>(texWidth),
 			static_cast<uint32_t>(texHeight),
 			mipLevels,
 			textureFormat);
-		auto& image = textureResource->image();
+		auto& image = destination->image();
 
 		vk::raii::CommandBuffer commandBuffer = beginSingleTimeCommands();
-		transitionImageLayout(commandBuffer, image, vk::ImageLayout::eUndefined, vk::ImageLayout::eTransferDstOptimal, textureResource->mipLevels());
+		transitionImageLayout(commandBuffer, image, vk::ImageLayout::eUndefined, vk::ImageLayout::eTransferDstOptimal, destination->mipLevels());
 		if (supportsLinearBlit)
 		{
 			copyBufferToImage(commandBuffer, stagingBuffer.buffer(), image, static_cast<uint32_t>(texWidth), static_cast<uint32_t>(texHeight));
-			generateMipmaps(commandBuffer, image, textureFormat, texWidth, texHeight, textureResource->mipLevels());
+			generateMipmaps(commandBuffer, image, textureFormat, texWidth, texHeight, destination->mipLevels());
 		}
 		else
 		{
@@ -629,7 +637,7 @@ class VulkanGameEngineApplication
 					.imageExtent = {mip.width, mip.height, 1}});
 			}
 			commandBuffer.copyBufferToImage(*stagingBuffer.buffer(), image, vk::ImageLayout::eTransferDstOptimal, regions);
-			transitionImageLayout(commandBuffer, image, vk::ImageLayout::eTransferDstOptimal, vk::ImageLayout::eShaderReadOnlyOptimal, textureResource->mipLevels());
+			transitionImageLayout(commandBuffer, image, vk::ImageLayout::eTransferDstOptimal, vk::ImageLayout::eShaderReadOnlyOptimal, destination->mipLevels());
 		}
 		endSingleTimeCommands(std::move(commandBuffer));
 	}
@@ -1147,6 +1155,8 @@ class VulkanGameEngineApplication
 		assert(materialResource.has_value());
 		materialResource->SetMetallic(1.0f);
 		materialResource->SetRoughness(1.0f);
+		materialResource->SetOcclusionStrength(1.0f);
+		materialResource->SetEmissive({0.0f, 0.0f, 0.0f, 0.0f});
 
 		auto& lightObject = scene.CreateGameObject();
 		DirectionalLight = &lightObject.AddComponent<DirectionalLightComponent>();
@@ -1599,7 +1609,7 @@ class VulkanGameEngineApplication
 
 	void UpdateDebugViewMode()
 	{
-		static constexpr std::array<std::pair<WindowKey, DebugViewMode>, 9> modes{{
+		static constexpr std::array<std::pair<WindowKey, DebugViewMode>, 15> modes{{
 			{WindowKey::Number0, DebugViewMode::Lit},
 			{WindowKey::Number1, DebugViewMode::WorldNormal},
 			{WindowKey::Number2, DebugViewMode::TangentNormal},
@@ -1608,7 +1618,13 @@ class VulkanGameEngineApplication
 			{WindowKey::Number5, DebugViewMode::Shadow},
 			{WindowKey::Number6, DebugViewMode::Albedo},
 			{WindowKey::Number7, DebugViewMode::GeometricNormal},
-			{WindowKey::Number8, DebugViewMode::Tangent}}};
+			{WindowKey::Number8, DebugViewMode::Tangent},
+			{WindowKey::Number9, DebugViewMode::ShadowDepth},
+			{WindowKey::F1, DebugViewMode::Diffuse},
+			{WindowKey::F2, DebugViewMode::Specular},
+			{WindowKey::F3, DebugViewMode::Fresnel},
+			{WindowKey::F4, DebugViewMode::AmbientOcclusion},
+			{WindowKey::F5, DebugViewMode::Emissive}}};
 
 		for (const auto [key, mode] : modes)
 		{

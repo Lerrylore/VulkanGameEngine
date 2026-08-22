@@ -33,6 +33,8 @@ struct MeshUniformBufferObject
 	glm::vec4 MaterialBaseColorAmbient;
 	glm::vec4 CameraPosition;
 	glm::vec4 MaterialMetallicRoughness;
+	glm::vec4 MaterialOcclusion;
+	glm::vec4 MaterialEmissive;
 	glm::vec4 DebugView;
 	glm::vec4 ShadowMapParameters;
 };
@@ -271,6 +273,12 @@ void MeshRenderer::UpdateUniformBuffers(
 				material.GetRoughness(),
 				0.0f,
 				0.0f),
+			.MaterialOcclusion = glm::vec4(
+				material.GetOcclusionStrength(),
+				0.0f,
+				0.0f,
+				0.0f),
+			.MaterialEmissive = material.GetEmissive(),
 			.DebugView = glm::vec4(
 				static_cast<float>(static_cast<uint32_t>(debugViewMode)),
 				0.0f,

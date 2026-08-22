@@ -15,7 +15,13 @@ enum class WindowKey
 	Number5,
 	Number6,
 	Number7,
-	Number8
+	Number8,
+	Number9,
+	F1,
+	F2,
+	F3,
+	F4,
+	F5
 };
 
 class Window final

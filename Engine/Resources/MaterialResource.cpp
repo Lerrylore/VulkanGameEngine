@@ -81,3 +81,27 @@ void MaterialResource::SetRoughness(float roughness)
 	}
 	Roughness = roughness;
 }
+
+float MaterialResource::GetOcclusionStrength() const noexcept
+{
+	return OcclusionStrength;
+}
+
+void MaterialResource::SetOcclusionStrength(float strength)
+{
+	if (strength < 0.0f || strength > 1.0f)
+	{
+		throw std::invalid_argument("Material occlusion strength must be between 0 and 1");
+	}
+	OcclusionStrength = strength;
+}
+
+const glm::vec4& MaterialResource::GetEmissive() const noexcept
+{
+	return Emissive;
+}
+
+void MaterialResource::SetEmissive(const glm::vec4& emissive) noexcept
+{
+	Emissive = emissive;
+}
