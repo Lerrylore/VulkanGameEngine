@@ -58,6 +58,9 @@
     <ClCompile Include="Engine\Vulkan\VulkanContext.cpp">
       <Filter>Engine\Vulkan</Filter>
     </ClCompile>
+    <ClCompile Include="Engine\Vulkan\SingleTimeCommandExecutor.cpp">
+      <Filter>Engine\Vulkan</Filter>
+    </ClCompile>
     <ClCompile Include="Engine\Platform\Window.cpp">
       <Filter>Engine\Platform</Filter>
     </ClCompile>
@@ -214,6 +217,9 @@
       <Filter>Engine\Services</Filter>
     </ClInclude>
     <ClInclude Include="Engine\Vulkan\VulkanContext.h">
+      <Filter>Engine\Vulkan</Filter>
+    </ClInclude>
+    <ClInclude Include="Engine\Vulkan\SingleTimeCommandExecutor.h">
       <Filter>Engine\Vulkan</Filter>
     </ClInclude>
   </ItemGroup>

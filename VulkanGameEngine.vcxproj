@@ -162,6 +162,7 @@
     <ClCompile Include="Engine\Services\ServiceLocator.cpp" />
     <ClCompile Include="Engine\ThirdParty\ThirdPartyImplementations.cpp" />
     <ClCompile Include="Engine\Vulkan\VulkanContext.cpp" />
+    <ClCompile Include="Engine\Vulkan\SingleTimeCommandExecutor.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Engine\Application\ApplicationLoop.h" />
@@ -194,6 +195,7 @@
     <ClInclude Include="Engine\Scene\TransformComponent.h" />
     <ClInclude Include="Engine\Services\ServiceLocator.h" />
     <ClInclude Include="Engine\Vulkan\VulkanContext.h" />
+    <ClInclude Include="Engine\Vulkan\SingleTimeCommandExecutor.h" />
   </ItemGroup>
   <ItemGroup>
     <None Include="main.cpp" />

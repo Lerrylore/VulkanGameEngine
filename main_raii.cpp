@@ -43,6 +43,7 @@
 #include "Engine/Scene/Scene.h"
 #include "Engine/Scene/TransformComponent.h"
 #include "Engine/Vulkan/VulkanContext.h"
+#include "Engine/Vulkan/SingleTimeCommandExecutor.h"
 
 #include <stb_image.h>
 #include <stb_image_resize2.h>
@@ -197,6 +198,7 @@ class VulkanGameEngineApplication
 	std::vector<vk::raii::DescriptorSet> computeDescriptorSets;
 
 	FrameResources frameResources{vulkan, ApplicationConfig::MaxFramesInFlight, swapChainImages.size()};
+	SingleTimeCommandExecutor SingleTimeCommands{vulkan, frameResources.commandPool()};
 
 	const vk::SampleCountFlagBits msaaSamples = vulkan.msaaSamples();
 	std::chrono::steady_clock::time_point lastParticleUpdate = std::chrono::steady_clock::now();
@@ -603,7 +605,7 @@ class VulkanGameEngineApplication
 			textureFormat);
 		auto& image = destination->image();
 
-		vk::raii::CommandBuffer commandBuffer = beginSingleTimeCommands();
+		vk::raii::CommandBuffer commandBuffer = SingleTimeCommands.Begin();
 		transitionImageLayout(commandBuffer, image, vk::ImageLayout::eUndefined, vk::ImageLayout::eTransferDstOptimal, destination->mipLevels());
 		if (supportsLinearBlit)
 		{
@@ -632,7 +634,7 @@ class VulkanGameEngineApplication
 			commandBuffer.copyBufferToImage(*stagingBuffer.buffer(), image, vk::ImageLayout::eTransferDstOptimal, regions);
 			transitionImageLayout(commandBuffer, image, vk::ImageLayout::eTransferDstOptimal, vk::ImageLayout::eShaderReadOnlyOptimal, destination->mipLevels());
 		}
-		endSingleTimeCommands(std::move(commandBuffer));
+		SingleTimeCommands.End(std::move(commandBuffer));
 	}
 
 	#if 0 // Retained as a learning reference; external texture assets are now loaded above.
@@ -657,7 +659,7 @@ class VulkanGameEngineApplication
 		std::memcpy(mapped, pixels.data(), sizeof(pixels));
 		stagingBuffer.memory().unmapMemory();
 
-		vk::raii::CommandBuffer commandBuffer = beginSingleTimeCommands();
+		vk::raii::CommandBuffer commandBuffer = SingleTimeCommands.Begin();
 		transitionImageLayout(
 			commandBuffer,
 			normalMapResource->image(),
@@ -686,7 +688,7 @@ class VulkanGameEngineApplication
 			vk::ImageLayout::eTransferDstOptimal,
 			vk::ImageLayout::eShaderReadOnlyOptimal,
 			1);
-		endSingleTimeCommands(std::move(commandBuffer));
+		SingleTimeCommands.End(std::move(commandBuffer));
 	}
 
 	void createProceduralMetallicRoughnessMapImage()
@@ -711,7 +713,7 @@ class VulkanGameEngineApplication
 		std::memcpy(mapped, pixels.data(), sizeof(pixels));
 		stagingBuffer.memory().unmapMemory();
 
-		vk::raii::CommandBuffer commandBuffer = beginSingleTimeCommands();
+		vk::raii::CommandBuffer commandBuffer = SingleTimeCommands.Begin();
 		transitionImageLayout(
 			commandBuffer,
 			metallicRoughnessMapResource->image(),
@@ -740,7 +742,7 @@ class VulkanGameEngineApplication
 			vk::ImageLayout::eTransferDstOptimal,
 			vk::ImageLayout::eShaderReadOnlyOptimal,
 			1);
-		endSingleTimeCommands(std::move(commandBuffer));
+		SingleTimeCommands.End(std::move(commandBuffer));
 	}
 
 	#endif
@@ -874,26 +876,6 @@ class VulkanGameEngineApplication
 						   .imageExtent = {width, height, 1} };
 
 		commandBuffer.copyBufferToImage(buffer, image, vk::ImageLayout::eTransferDstOptimal, region);
-	}
-
-	vk::raii::CommandBuffer beginSingleTimeCommands()
-	{
-		vk::CommandBufferAllocateInfo allocInfo{ .commandPool = frameResources.commandPool(), .level = vk::CommandBufferLevel::ePrimary, .commandBufferCount = 1 };
-		vk::raii::CommandBuffer       commandBuffer = std::move(vk::raii::CommandBuffers(device, allocInfo).front());
-
-		vk::CommandBufferBeginInfo beginInfo{ .flags = vk::CommandBufferUsageFlagBits::eOneTimeSubmit };
-		commandBuffer.begin(beginInfo);
-
-		return std::move(commandBuffer);
-	}
-
-	void endSingleTimeCommands(vk::raii::CommandBuffer&& commandBuffer)
-	{
-		commandBuffer.end();
-
-		vk::SubmitInfo submitInfo{ .commandBufferCount = 1, .pCommandBuffers = &*commandBuffer };
-		queue.submit(submitInfo, nullptr);
-		queue.waitIdle();
 	}
 
 	void createDescriptorSetLayout() 
@@ -1267,9 +1249,9 @@ class VulkanGameEngineApplication
 
 	void copyBuffer(vk::raii::Buffer& srcBuffer, vk::raii::Buffer& dstBuffer, vk::DeviceSize size)
 	{
-		vk::raii::CommandBuffer commandCopyBuffer = beginSingleTimeCommands();
+		vk::raii::CommandBuffer commandCopyBuffer = SingleTimeCommands.Begin();
 		commandCopyBuffer.copyBuffer(*srcBuffer, *dstBuffer, vk::BufferCopy{ .size = size });
-		endSingleTimeCommands(std::move(commandCopyBuffer));
+		SingleTimeCommands.End(std::move(commandCopyBuffer));
 	}
 
 	void recordComputeCommandBuffer()
