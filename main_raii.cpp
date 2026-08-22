@@ -20,6 +20,7 @@
 #include <chrono>
 
 #include "Engine/Platform/Window.h"
+#include "Engine/Renderer/FrameResources.h"
 #include "Engine/Renderer/RenderTargetResources.h"
 #include "Engine/Renderer/SwapchainResources.h"
 #include "Engine/Resources/BufferAllocation.h"
@@ -152,7 +153,6 @@ class VulkanGameEngineApplication
 	// VulkanContext remains the sole owner of the handles.
 	vk::raii::PhysicalDevice&        physicalDevice = vulkan.physicalDevice();
 	vk::raii::Device&                device = vulkan.device();
-	const uint32_t                   queueIndex = vulkan.queueFamilyIndex();
 	vk::raii::Queue&                 queue = vulkan.queue();
 	SwapchainResources               swapchainResources{vulkan, window};
 	// Temporary aliases until the renderer consumes SwapchainResources directly.
@@ -195,15 +195,7 @@ class VulkanGameEngineApplication
 	vk::raii::ImageView textureImageView = nullptr;
 	vk::raii::Sampler      textureSampler = nullptr;
 
-	vk::raii::CommandPool                commandPool = nullptr;
-	std::vector<vk::raii::CommandBuffer> commandBuffers;
-	std::vector<vk::raii::CommandBuffer> computeCommandBuffers;
-
-	std::vector<vk::raii::Semaphore> presentCompleteSemaphores;
-	std::vector<vk::raii::Semaphore> renderFinishedSemaphores;
-	std::vector<vk::raii::Semaphore> computeFinishedSemaphores;
-	std::vector<vk::raii::Fence>     inFlightFences;
-	uint32_t                         frameIndex   = 0;
+	FrameResources frameResources{vulkan, MAX_FRAMES_IN_FLIGHT, swapChainImages.size()};
 
 	const vk::SampleCountFlagBits msaaSamples = vulkan.msaaSamples();
 	std::chrono::steady_clock::time_point lastParticleUpdate = std::chrono::steady_clock::now();
@@ -218,7 +210,6 @@ class VulkanGameEngineApplication
 		createGraphicsPipeline();
 		createParticleGraphicsPipeline();
 		createComputePipeline();
-		createCommandPool();
 		createTextureImage();
 		createTextureImageView();
 		createTextureSampler();
@@ -232,8 +223,6 @@ class VulkanGameEngineApplication
 		createDescriptorSets();
 		createComputeDescriptorPool();
 		createComputeDescriptorSets();
-		createCommandBuffers();
-		createSyncObjects();
 	}
 
 	void mainLoop()
@@ -260,8 +249,7 @@ class VulkanGameEngineApplication
 
 		const bool formatChanged = swapchainResources.recreate();
 		renderTargets.recreate();
-		renderFinishedSemaphores.clear();
-		createRenderFinishedSemaphores();
+		frameResources.recreateSwapchainImages(swapChainImages.size());
 		if (formatChanged)
 		{
 			createGraphicsPipeline();
@@ -440,13 +428,6 @@ class VulkanGameEngineApplication
 		computePipelineLayout = vk::raii::PipelineLayout(device, layoutInfo);
 		vk::ComputePipelineCreateInfo pipelineInfo{.stage = shaderStage, .layout = computePipelineLayout};
 		computePipeline = vk::raii::Pipeline(device, nullptr, pipelineInfo);
-	}
-
-	void createCommandPool()
-	{
-		vk::CommandPoolCreateInfo poolInfo{.flags            = vk::CommandPoolCreateFlagBits::eResetCommandBuffer,
-		                                   .queueFamilyIndex = queueIndex};
-		commandPool = vk::raii::CommandPool(device, poolInfo);
 	}
 
 	void createTextureImage()
@@ -743,7 +724,7 @@ class VulkanGameEngineApplication
 
 	vk::raii::CommandBuffer beginSingleTimeCommands()
 	{
-		vk::CommandBufferAllocateInfo allocInfo{ .commandPool = commandPool, .level = vk::CommandBufferLevel::ePrimary, .commandBufferCount = 1 };
+		vk::CommandBufferAllocateInfo allocInfo{ .commandPool = frameResources.commandPool(), .level = vk::CommandBufferLevel::ePrimary, .commandBufferCount = 1 };
 		vk::raii::CommandBuffer       commandBuffer = std::move(vk::raii::CommandBuffers(device, allocInfo).front());
 
 		vk::CommandBufferBeginInfo beginInfo{ .flags = vk::CommandBufferUsageFlagBits::eOneTimeSubmit };
@@ -1104,18 +1085,10 @@ class VulkanGameEngineApplication
 		endSingleTimeCommands(std::move(commandCopyBuffer));
 	}
 
-	void createCommandBuffers()
-	{
-		commandBuffers.clear();
-		computeCommandBuffers.clear();
-		vk::CommandBufferAllocateInfo allocInfo{.commandPool = commandPool, .level = vk::CommandBufferLevel::ePrimary, .commandBufferCount = MAX_FRAMES_IN_FLIGHT};
-		commandBuffers = vk::raii::CommandBuffers(device, allocInfo);
-		computeCommandBuffers = vk::raii::CommandBuffers(device, allocInfo);
-	}
-
 	void recordComputeCommandBuffer()
 	{
-		auto& commandBuffer = computeCommandBuffers[frameIndex];
+		const uint32_t frameIndex = frameResources.currentFrame();
+		auto& commandBuffer = frameResources.computeCommandBuffer(frameIndex);
 		commandBuffer.begin({});
 		commandBuffer.bindPipeline(vk::PipelineBindPoint::eCompute, *computePipeline);
 		commandBuffer.bindDescriptorSets(
@@ -1145,8 +1118,8 @@ class VulkanGameEngineApplication
 
 	void recordCommandBuffer(uint32_t imageIndex)
 	{
-
-		auto &commandBuffer = commandBuffers[frameIndex];
+		const uint32_t frameIndex = frameResources.currentFrame();
+		auto &commandBuffer = frameResources.graphicsCommandBuffer(frameIndex);
 		commandBuffer.begin({});
 
 		// Before starting rendering, transition the swapchain image to COLOR_ATTACHMENT_OPTIMAL
@@ -1278,43 +1251,21 @@ class VulkanGameEngineApplication
 		    .dependencyFlags         = {},
 		    .imageMemoryBarrierCount = 1,
 		    .pImageMemoryBarriers    = &barrier};
-		commandBuffers[frameIndex].pipelineBarrier2(dependency_info);
-	}
-
-	void createSyncObjects()
-	{
-		assert(presentCompleteSemaphores.empty() && renderFinishedSemaphores.empty() && computeFinishedSemaphores.empty() && inFlightFences.empty());
-		createRenderFinishedSemaphores();
-
-		for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++)
-		{
-			presentCompleteSemaphores.emplace_back(device, vk::SemaphoreCreateInfo());
-			computeFinishedSemaphores.emplace_back(device, vk::SemaphoreCreateInfo());
-			inFlightFences.emplace_back(device, vk::FenceCreateInfo{.flags = vk::FenceCreateFlagBits::eSignaled});
-		}
-	}
-
-	void createRenderFinishedSemaphores()
-	{
-		assert(renderFinishedSemaphores.empty());
-		renderFinishedSemaphores.reserve(swapChainImages.size());
-		for (size_t i = 0; i < swapChainImages.size(); ++i)
-		{
-			renderFinishedSemaphores.emplace_back(device, vk::SemaphoreCreateInfo());
-		}
+		frameResources.graphicsCommandBuffer(frameResources.currentFrame()).pipelineBarrier2(dependency_info);
 	}
 
 	void drawFrame()
 	{
-		// Note: inFlightFences, presentCompleteSemaphores, and commandBuffers are indexed by frameIndex,
-		//       while renderFinishedSemaphores is indexed by imageIndex
-		auto fenceResult = device.waitForFences(*inFlightFences[frameIndex], vk::True, UINT64_MAX);
+		const uint32_t frameIndex = frameResources.currentFrame();
+		// Per-frame resources use frameIndex; render-finished semaphores use the
+		// independently acquired swapchain imageIndex.
+		auto fenceResult = device.waitForFences(*frameResources.inFlightFence(frameIndex), vk::True, UINT64_MAX);
 		if (fenceResult != vk::Result::eSuccess)
 		{
 			throw std::runtime_error("failed to wait for fence!");
 		}
 
-		auto [result, imageIndex] = swapChain.acquireNextImage(UINT64_MAX, *presentCompleteSemaphores[frameIndex], nullptr);
+		auto [result, imageIndex] = swapChain.acquireNextImage(UINT64_MAX, *frameResources.imageAvailableSemaphore(frameIndex), nullptr);
 
 		// Due to VULKAN_HPP_HANDLE_ERROR_OUT_OF_DATE_AS_SUCCESS being defined, eErrorOutOfDateKHR can be checked as a result
 		// here and does not need to be caught by an exception.
@@ -1332,26 +1283,26 @@ class VulkanGameEngineApplication
 		}
 
 		// Only reset the fence if we are submitting work
-		device.resetFences(*inFlightFences[frameIndex]);
+		device.resetFences(*frameResources.inFlightFence(frameIndex));
 
 		updateUniformBuffer(frameIndex);
 		updateComputeUniformBuffer(frameIndex);
 
-		computeCommandBuffers[frameIndex].reset();
+		frameResources.computeCommandBuffer(frameIndex).reset();
 		recordComputeCommandBuffer();
 		const vk::SubmitInfo computeSubmitInfo{
 			.commandBufferCount = 1,
-			.pCommandBuffers = &*computeCommandBuffers[frameIndex],
+			.pCommandBuffers = &*frameResources.computeCommandBuffer(frameIndex),
 			.signalSemaphoreCount = 1,
-			.pSignalSemaphores = &*computeFinishedSemaphores[frameIndex]};
+			.pSignalSemaphores = &*frameResources.computeFinishedSemaphore(frameIndex)};
 		queue.submit(computeSubmitInfo, nullptr);
 
-		commandBuffers[frameIndex].reset();
+		frameResources.graphicsCommandBuffer(frameIndex).reset();
 		recordCommandBuffer(imageIndex);
 
 		std::array waitSemaphores{
-			*presentCompleteSemaphores[frameIndex],
-			*computeFinishedSemaphores[frameIndex]};
+			*frameResources.imageAvailableSemaphore(frameIndex),
+			*frameResources.computeFinishedSemaphore(frameIndex)};
 		std::array waitDestinationStageMasks{
 			vk::PipelineStageFlags(vk::PipelineStageFlagBits::eColorAttachmentOutput),
 			vk::PipelineStageFlags(vk::PipelineStageFlagBits::eVertexInput)};
@@ -1360,13 +1311,13 @@ class VulkanGameEngineApplication
 		                                  .pWaitSemaphores      = waitSemaphores.data(),
 		                                  .pWaitDstStageMask    = waitDestinationStageMasks.data(),
 		                                  .commandBufferCount   = 1,
-		                                  .pCommandBuffers      = &*commandBuffers[frameIndex],
+		                                  .pCommandBuffers      = &*frameResources.graphicsCommandBuffer(frameIndex),
 		                                  .signalSemaphoreCount = 1,
-		                                  .pSignalSemaphores    = &*renderFinishedSemaphores[imageIndex]};
-		queue.submit(submitInfo, *inFlightFences[frameIndex]);
+		                                  .pSignalSemaphores    = &*frameResources.renderFinishedSemaphore(imageIndex)};
+		queue.submit(submitInfo, *frameResources.inFlightFence(frameIndex));
 
 		const vk::PresentInfoKHR presentInfoKHR{.waitSemaphoreCount = 1,
-			                                      .pWaitSemaphores    = &*renderFinishedSemaphores[imageIndex],
+			                                      .pWaitSemaphores    = &*frameResources.renderFinishedSemaphore(imageIndex),
 			                                      .swapchainCount     = 1,
 			                                      .pSwapchains        = &*swapChain,
 			                                      .pImageIndices      = &imageIndex};
@@ -1383,7 +1334,7 @@ class VulkanGameEngineApplication
 			// There are no other success codes than eSuccess; on any error code, presentKHR already threw an exception.
 			assert(result == vk::Result::eSuccess);
 		}
-		frameIndex   = (frameIndex + 1) % MAX_FRAMES_IN_FLIGHT;
+		frameResources.advanceFrame();
 	}
 
 	void updateComputeUniformBuffer(uint32_t currentFrame)
