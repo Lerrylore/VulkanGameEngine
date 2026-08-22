@@ -145,6 +145,7 @@
     <ClCompile Include="Engine\Resources\MaterialResource.cpp" />
     <ClCompile Include="Engine\Resources\MeshResource.cpp" />
     <ClCompile Include="Engine\Resources\TextureResource.cpp" />
+    <ClCompile Include="Engine\Resources\TextureFileLoader.cpp" />
     <ClCompile Include="Engine\Scene\CameraComponent.cpp" />
     <ClCompile Include="Engine\Scene\Component.cpp" />
     <ClCompile Include="Engine\Scene\DirectionalLightComponent.cpp" />
@@ -174,6 +175,7 @@
     <ClInclude Include="Engine\Resources\MaterialResource.h" />
     <ClInclude Include="Engine\Resources\MeshResource.h" />
     <ClInclude Include="Engine\Resources\TextureResource.h" />
+    <ClInclude Include="Engine\Resources\TextureFileLoader.h" />
     <ClInclude Include="Engine\Scene\CameraComponent.h" />
     <ClInclude Include="Engine\Scene\Component.h" />
     <ClInclude Include="Engine\Scene\DirectionalLightComponent.h" />

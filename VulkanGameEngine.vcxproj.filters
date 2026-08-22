@@ -85,6 +85,9 @@
     <ClCompile Include="Engine\Resources\TextureResource.cpp">
       <Filter>Engine\Resources</Filter>
     </ClCompile>
+    <ClCompile Include="Engine\Resources\TextureFileLoader.cpp">
+      <Filter>Engine\Resources</Filter>
+    </ClCompile>
     <ClCompile Include="Engine\Scene\CameraComponent.cpp">
       <Filter>Engine\Scene</Filter>
     </ClCompile>
@@ -157,6 +160,9 @@
       <Filter>Engine\Resources</Filter>
     </ClInclude>
     <ClInclude Include="Engine\Resources\TextureResource.h">
+      <Filter>Engine\Resources</Filter>
+    </ClInclude>
+    <ClInclude Include="Engine\Resources\TextureFileLoader.h">
       <Filter>Engine\Resources</Filter>
     </ClInclude>
     <ClInclude Include="Engine\Scene\CameraComponent.h">

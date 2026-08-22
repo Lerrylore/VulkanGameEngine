@@ -32,6 +32,7 @@
 #include "Engine/Resources/MaterialResource.h"
 #include "Engine/Resources/MeshResource.h"
 #include "Engine/Resources/TextureResource.h"
+#include "Engine/Resources/TextureFileLoader.h"
 #include "Engine/Services/ServiceLocator.h"
 #include "Engine/Scene/CameraComponent.h"
 #include "Engine/Scene/DirectionalLightComponent.h"
@@ -515,12 +516,9 @@ class VulkanGameEngineApplication
 		const std::string& texturePath,
 		vk::Format textureFormat)
 	{
-		int            texWidth, texHeight, texChannels;
-		stbi_uc* pixels = stbi_load(texturePath.c_str(), &texWidth, &texHeight, &texChannels, STBI_rgb_alpha);
-		if (!pixels)
-		{
-			throw std::runtime_error("failed to load texture image!");
-		}
+		const TextureFile textureFile = TextureFileLoader::Load(texturePath);
+		const int texWidth = textureFile.Width;
+		const int texHeight = textureFile.Height;
 
 		constexpr uint32_t bytesPerPixel = 4;
 		const uint32_t mipLevels =
@@ -559,7 +557,10 @@ class VulkanGameEngineApplication
 			}
 
 			cpuMipPixels.resize(static_cast<std::size_t>(totalSize));
-			memcpy(cpuMipPixels.data(), pixels, static_cast<std::size_t>(cpuMipLevels.front().width) * cpuMipLevels.front().height * bytesPerPixel);
+			memcpy(
+				cpuMipPixels.data(),
+				textureFile.Pixels.data(),
+				static_cast<std::size_t>(cpuMipLevels.front().width) * cpuMipLevels.front().height * bytesPerPixel);
 
 			for (uint32_t level = 1; level < mipLevels; ++level)
 			{
@@ -572,7 +573,6 @@ class VulkanGameEngineApplication
 						static_cast<int>(destination.width), static_cast<int>(destination.height), 0,
 						STBIR_RGBA))
 				{
-					stbi_image_free(pixels);
 					throw std::runtime_error("failed to generate texture mipmaps in software!");
 				}
 			}
@@ -588,15 +588,13 @@ class VulkanGameEngineApplication
 		void* data = stagingBuffer.memory().mapMemory(0, stagingSize);
 		if (supportsLinearBlit)
 		{
-			memcpy(data, pixels, static_cast<std::size_t>(stagingSize));
+			memcpy(data, textureFile.Pixels.data(), static_cast<std::size_t>(stagingSize));
 		}
 		else
 		{
 			memcpy(data, cpuMipPixels.data(), static_cast<std::size_t>(stagingSize));
 		}
 		stagingBuffer.memory().unmapMemory();
-
-		stbi_image_free(pixels);
 
 		destination.emplace(
 			vulkan,
