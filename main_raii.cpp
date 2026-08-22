@@ -26,6 +26,7 @@
 #include "Engine/Resources/MeshResource.h"
 #include "Engine/Resources/TextureResource.h"
 #include "Engine/Scene/GameObject.h"
+#include "Engine/Scene/Scene.h"
 #include "Engine/Scene/TransformComponent.h"
 #include "Engine/Vulkan/VulkanContext.h"
 
@@ -101,9 +102,9 @@ struct UniformBufferObject
 	glm::mat4 proj;
 };
 
-struct RenderableGameObject
+struct RenderObjectResources
 {
-	GameObject                            scene;
+	GameObject*                           gameObject = nullptr;
 	std::vector<BufferAllocation>        uniformBuffers;
 	std::vector<void*>                   uniformBuffersMapped;
 	std::vector<vk::raii::DescriptorSet> descriptorSets;
@@ -182,8 +183,9 @@ class VulkanGameEngineApplication
 	std::vector<BufferAllocation> computeUniformBuffers;
 	std::vector<void*>            computeUniformBuffersMapped;
 
+	Scene scene;
 	vk::raii::DescriptorPool descriptorPool = nullptr;
-	std::array<RenderableGameObject, MAX_OBJECTS> gameObjects;
+	std::array<RenderObjectResources, MAX_OBJECTS> renderObjects;
 	vk::raii::DescriptorPool computeDescriptorPool = nullptr;
 	std::vector<vk::raii::DescriptorSet> computeDescriptorSets;
 
@@ -874,37 +876,43 @@ class VulkanGameEngineApplication
 
 	void setupGameObjects()
 	{
-		gameObjects[0].scene.transform().setPosition({0.0f, 0.0f, 0.0f});
-		gameObjects[0].scene.transform().setRotation({0.0f, 0.0f, 0.0f});
-		gameObjects[0].scene.transform().setScale({0.7f, 0.7f, 0.7f});
+		auto& centerObject = scene.createGameObject();
+		centerObject.transform().setPosition({0.0f, 0.0f, 0.0f});
+		centerObject.transform().setRotation({0.0f, 0.0f, 0.0f});
+		centerObject.transform().setScale({0.7f, 0.7f, 0.7f});
+		renderObjects[0].gameObject = &centerObject;
 
-		gameObjects[1].scene.transform().setPosition({-1.35f, 0.0f, -0.35f});
-		gameObjects[1].scene.transform().setRotation({0.0f, 0.0f, glm::radians(-25.0f)});
-		gameObjects[1].scene.transform().setScale({0.55f, 0.55f, 0.55f});
+		auto& leftObject = scene.createGameObject();
+		leftObject.transform().setPosition({-1.35f, 0.0f, -0.35f});
+		leftObject.transform().setRotation({0.0f, 0.0f, glm::radians(-25.0f)});
+		leftObject.transform().setScale({0.55f, 0.55f, 0.55f});
+		renderObjects[1].gameObject = &leftObject;
 
-		gameObjects[2].scene.transform().setPosition({1.35f, 0.0f, -0.35f});
-		gameObjects[2].scene.transform().setRotation({0.0f, 0.0f, glm::radians(25.0f)});
-		gameObjects[2].scene.transform().setScale({0.55f, 0.55f, 0.55f});
+		auto& rightObject = scene.createGameObject();
+		rightObject.transform().setPosition({1.35f, 0.0f, -0.35f});
+		rightObject.transform().setRotation({0.0f, 0.0f, glm::radians(25.0f)});
+		rightObject.transform().setScale({0.55f, 0.55f, 0.55f});
+		renderObjects[2].gameObject = &rightObject;
 	}
 
 	void createUniformBuffers()
 	{
-		for (auto &gameObject : gameObjects)
+		for (auto &renderObject : renderObjects)
 		{
-			assert(gameObject.uniformBuffers.empty() && gameObject.uniformBuffersMapped.empty());
-			gameObject.uniformBuffers.reserve(MAX_FRAMES_IN_FLIGHT);
-			gameObject.uniformBuffersMapped.reserve(MAX_FRAMES_IN_FLIGHT);
+			assert(renderObject.uniformBuffers.empty() && renderObject.uniformBuffersMapped.empty());
+			renderObject.uniformBuffers.reserve(MAX_FRAMES_IN_FLIGHT);
+			renderObject.uniformBuffersMapped.reserve(MAX_FRAMES_IN_FLIGHT);
 
 			for (size_t frame = 0; frame < MAX_FRAMES_IN_FLIGHT; ++frame)
 			{
 				constexpr vk::DeviceSize bufferSize = sizeof(UniformBufferObject);
-				gameObject.uniformBuffers.emplace_back(
+				renderObject.uniformBuffers.emplace_back(
 					vulkan,
 					bufferSize,
 					vk::BufferUsageFlagBits::eUniformBuffer,
 					vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent);
-				gameObject.uniformBuffersMapped.emplace_back(
-					gameObject.uniformBuffers.back().memory().mapMemory(0, bufferSize));
+				renderObject.uniformBuffersMapped.emplace_back(
+					renderObject.uniformBuffers.back().memory().mapMemory(0, bufferSize));
 			}
 		}
 	}
@@ -944,29 +952,29 @@ class VulkanGameEngineApplication
 
 	void createDescriptorSets()
 	{
-		for (auto &gameObject : gameObjects)
+		for (auto &renderObject : renderObjects)
 		{
 			std::vector<vk::DescriptorSetLayout> layouts(MAX_FRAMES_IN_FLIGHT, *descriptorSetLayout);
 			vk::DescriptorSetAllocateInfo allocInfo{ .descriptorPool = descriptorPool,
 													 .descriptorSetCount = static_cast<uint32_t>(layouts.size()),
 													 .pSetLayouts = layouts.data() };
-			gameObject.descriptorSets = device.allocateDescriptorSets(allocInfo);
+			renderObject.descriptorSets = device.allocateDescriptorSets(allocInfo);
 
 			for (size_t frame = 0; frame < MAX_FRAMES_IN_FLIGHT; ++frame)
 			{
-				vk::DescriptorBufferInfo bufferInfo{ .buffer = *gameObject.uniformBuffers[frame].buffer(), .offset = 0, .range = sizeof(UniformBufferObject) };
+				vk::DescriptorBufferInfo bufferInfo{ .buffer = *renderObject.uniformBuffers[frame].buffer(), .offset = 0, .range = sizeof(UniformBufferObject) };
 				vk::DescriptorImageInfo imageInfo{
 					.sampler = *textureResource->sampler(),
 					.imageView = *textureResource->imageView(),
 					.imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal};
 
-				std::array<vk::WriteDescriptorSet, 2> descriptorWrites{ {{.dstSet = gameObject.descriptorSets[frame],
+				std::array<vk::WriteDescriptorSet, 2> descriptorWrites{ {{.dstSet = renderObject.descriptorSets[frame],
 																	 .dstBinding = 0,
 																	 .dstArrayElement = 0,
 																	 .descriptorCount = 1,
 																	 .descriptorType = vk::DescriptorType::eUniformBuffer,
 																	 .pBufferInfo = &bufferInfo},
-																	{.dstSet = gameObject.descriptorSets[frame],
+																	{.dstSet = renderObject.descriptorSets[frame],
 																	 .dstBinding = 1,
 																	 .dstArrayElement = 0,
 																	 .descriptorCount = 1,
@@ -1141,13 +1149,13 @@ class VulkanGameEngineApplication
 
 		// Geometry, pipeline and texture are shared. The descriptor set selects the
 		// transform uniform buffer belonging to the object drawn by this call.
-		for (const auto &gameObject : gameObjects)
+		for (const auto &renderObject : renderObjects)
 		{
 			commandBuffer.bindDescriptorSets(
 				vk::PipelineBindPoint::eGraphics,
 				pipelineLayout,
 				0,
-				*gameObject.descriptorSets[frameIndex],
+				*renderObject.descriptorSets[frameIndex],
 				nullptr);
 			commandBuffer.drawIndexed(meshResource->indexCount(), 1, 0, 0, 0);
 		}
@@ -1316,20 +1324,21 @@ class VulkanGameEngineApplication
 			10.0f);
 		proj[1][1] *= -1;
 
-		for (size_t objectIndex = 0; objectIndex < gameObjects.size(); ++objectIndex)
+		for (size_t objectIndex = 0; objectIndex < renderObjects.size(); ++objectIndex)
 		{
-			const auto &gameObject = gameObjects[objectIndex];
+			const auto &renderObject = renderObjects[objectIndex];
+			assert(renderObject.gameObject != nullptr);
 			const float direction = objectIndex % 2 == 0 ? 1.0f : -1.0f;
 
 			UniformBufferObject ubo{};
-			ubo.model = gameObject.scene.transform().modelMatrix() * glm::rotate(
+			ubo.model = renderObject.gameObject->transform().modelMatrix() * glm::rotate(
 				glm::mat4(1.0f),
 				direction * time * glm::radians(35.0f),
 				glm::vec3(0.0f, 0.0f, 1.0f));
 			ubo.view = view;
 			ubo.proj = proj;
 
-			memcpy(gameObject.uniformBuffersMapped[currentImage], &ubo, sizeof(ubo));
+			memcpy(renderObject.uniformBuffersMapped[currentImage], &ubo, sizeof(ubo));
 		}
 	}
 
