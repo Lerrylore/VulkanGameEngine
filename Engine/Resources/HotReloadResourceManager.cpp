@@ -13,9 +13,9 @@ std::filesystem::file_time_type HotReloadResourceManager::GetLastWriteTime(
 	return error ? std::filesystem::file_time_type{} : timestamp;
 }
 
-uint32_t HotReloadResourceManager::Poll()
+std::vector<HotReloadResourceManager::ResourceReloadEvent> HotReloadResourceManager::Poll()
 {
-	uint32_t reloaded = 0;
+	std::vector<ResourceReloadEvent> reloaded;
 	for (auto& entry : Watches)
 	{
 		WatchEntry& watch = entry.second;
@@ -29,11 +29,7 @@ uint32_t HotReloadResourceManager::Poll()
 		watch.LastWriteTime = currentTimestamp;
 		if (success)
 		{
-			++reloaded;
-			if (watch.OnReload)
-			{
-				watch.OnReload();
-			}
+			reloaded.push_back({watch.ResourceId, watch.FilePath});
 		}
 	}
 	return reloaded;

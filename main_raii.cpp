@@ -3,6 +3,7 @@
 #include <array>
 #include <cstdlib>
 #include <cstring>
+#include <functional>
 #include <iostream>
 #include <limits>
 #include <memory>
@@ -193,10 +194,7 @@ class VulkanGameEngineApplication
 	vk::raii::DescriptorSetLayout computeDescriptorSetLayout = nullptr;
 	vk::raii::PipelineLayout      computePipelineLayout = nullptr;
 	vk::raii::Pipeline            computePipeline = nullptr;
-	bool GraphicsPipelineDirty = false;
-	bool ShadowPipelineDirty = false;
-	bool ParticlePipelineDirty = false;
-	bool ComputePipelineDirty = false;
+	std::unordered_map<std::string, std::function<void()>> ResourceReloadCallbacks;
 
 	ResourceHandle<MeshResource> meshResource;
 	ResourceHandle<TextureResource> textureResource;
@@ -298,28 +296,23 @@ class VulkanGameEngineApplication
 			throw std::runtime_error("failed to load one or more shader resources");
 		}
 
-		HotReload.Watch(
-			MainShader,
-			"Shaders/slang.spv",
-			[this]()
-			{
-				GraphicsPipelineDirty = true;
-				ShadowPipelineDirty = true;
-			});
-		HotReload.Watch(
-			ParticleShader,
-			"Shaders/particles.spv",
-			[this]()
-			{
-				ParticlePipelineDirty = true;
-			});
-		HotReload.Watch(
-			ComputeShader,
-			"Shaders/compute.spv",
-			[this]()
-			{
-				ComputePipelineDirty = true;
-			});
+		HotReload.Watch(MainShader, "Shaders/slang.spv");
+		HotReload.Watch(ParticleShader, "Shaders/particles.spv");
+		HotReload.Watch(ComputeShader, "Shaders/compute.spv");
+
+		ResourceReloadCallbacks.emplace("slang", [this]()
+		{
+			createGraphicsPipeline();
+			createShadowGraphicsPipeline();
+		});
+		ResourceReloadCallbacks.emplace("particles", [this]()
+		{
+			createParticleGraphicsPipeline();
+		});
+		ResourceReloadCallbacks.emplace("compute", [this]()
+		{
+			createComputePipeline();
+		});
 	}
 
 	void startAsyncResourceLoad()
@@ -355,36 +348,20 @@ class VulkanGameEngineApplication
 					AsyncShaderReported = true;
 				}
 			}
-			HotReload.Poll();
-			if (GraphicsPipelineDirty ||
-				ShadowPipelineDirty ||
-				ParticlePipelineDirty ||
-				ComputePipelineDirty)
+			const auto reloadedResources = HotReload.Poll();
+			if (!reloadedResources.empty())
 			{
 				// A pipeline keeps the shader code it was created from. Rebuild after
 				// the module reload, and wait until old frame work has completed.
 				device.waitIdle();
-				if (GraphicsPipelineDirty)
+				for (const auto& resource : reloadedResources)
 				{
-					createGraphicsPipeline();
+					const auto callback = ResourceReloadCallbacks.find(resource.ResourceId);
+					if (callback != ResourceReloadCallbacks.end())
+					{
+						callback->second();
+					}
 				}
-				if (ShadowPipelineDirty)
-				{
-					createShadowGraphicsPipeline();
-				}
-				if (ParticlePipelineDirty)
-				{
-					createParticleGraphicsPipeline();
-				}
-				if (ComputePipelineDirty)
-				{
-					createComputePipeline();
-				}
-
-				GraphicsPipelineDirty = false;
-				ShadowPipelineDirty = false;
-				ParticlePipelineDirty = false;
-				ComputePipelineDirty = false;
 			}
 			scene.Update(deltaTime);
 			drawFrame();
