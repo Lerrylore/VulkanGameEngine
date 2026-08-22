@@ -144,6 +144,7 @@
     <ClCompile Include="Engine\Resources\BufferAllocation.cpp" />
     <ClCompile Include="Engine\Resources\BinaryFileLoader.cpp" />
     <ClCompile Include="Engine\Resources\AsyncResourceManager.cpp" />
+    <ClCompile Include="Engine\Resources\BinaryResource.cpp" />
     <ClCompile Include="Engine\Resources\HotReloadResourceManager.cpp" />
     <ClCompile Include="Engine\Resources\ImageAllocation.cpp" />
     <ClCompile Include="Engine\Resources\MaterialResource.cpp" />
@@ -184,6 +185,7 @@
     <ClInclude Include="Engine\Resources\BufferAllocation.h" />
     <ClInclude Include="Engine\Resources\BinaryFileLoader.h" />
     <ClInclude Include="Engine\Resources\AsyncResourceManager.h" />
+    <ClInclude Include="Engine\Resources\BinaryResource.h" />
     <ClInclude Include="Engine\Resources\HotReloadResourceManager.h" />
     <ClInclude Include="Engine\Resources\ImageAllocation.h" />
     <ClInclude Include="Engine\Resources\MaterialResource.h" />

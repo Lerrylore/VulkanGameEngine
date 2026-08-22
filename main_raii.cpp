@@ -6,6 +6,7 @@
 #include <iostream>
 #include <limits>
 #include <memory>
+#include <mutex>
 #include <optional>
 #include <random>
 #include <stdexcept>
@@ -29,7 +30,9 @@
 #include "Engine/Renderer/ShadowMapResources.h"
 #include "Engine/Renderer/SwapchainResources.h"
 #include "Engine/Events/EventBus.h"
+#include "Engine/Resources/AsyncResourceManager.h"
 #include "Engine/Resources/BufferAllocation.h"
+#include "Engine/Resources/BinaryResource.h"
 #include "Engine/Resources/MaterialResource.h"
 #include "Engine/Resources/MeshResource.h"
 #include "Engine/Resources/ResourceManager.h"
@@ -154,11 +157,17 @@ class VulkanGameEngineApplication
 	vk::raii::Device&                device = vulkan.device();
 	vk::raii::Queue&                 queue = vulkan.queue();
 	ResourceManager                  Resources;
+	ResourceManager                  AsyncResourceCache;
+	AsyncResourceManager              AsyncResources{AsyncResourceCache};
 	HotReloadResourceManager         HotReload{Resources};
 	ResourceStreamingManager         Streaming;
 	ResourceHandle<ShaderResource>   MainShader;
 	ResourceHandle<ShaderResource>   ParticleShader;
 	ResourceHandle<ShaderResource>   ComputeShader;
+	ResourceHandle<BinaryResource>   AsyncShaderBinary;
+	std::mutex                       AsyncResultMutex;
+	bool                             AsyncShaderCompleted = false;
+	bool                             AsyncShaderReported = false;
 	SwapchainResources               swapchainResources{vulkan, window};
 	// Temporary aliases until the renderer consumes SwapchainResources directly.
 	vk::raii::SwapchainKHR&          swapChain = swapchainResources.handle();
@@ -261,6 +270,7 @@ class VulkanGameEngineApplication
 		createComputeDescriptorPool();
 		createComputeDescriptorSets();
 		scene.Initialize();
+		startAsyncResourceLoad();
 		DebugViewController::PrintHelp();
 	}
 
@@ -289,11 +299,39 @@ class VulkanGameEngineApplication
 		HotReload.Watch(ComputeShader, "Shaders/compute.spv");
 	}
 
+	void startAsyncResourceLoad()
+	{
+		AsyncResources.LoadAsync<BinaryResource>(
+			"slang_binary_async",
+			[]()
+			{
+				return std::make_shared<BinaryResource>(
+					"slang_binary_async",
+					"Shaders/slang.spv");
+			},
+			[this](ResourceHandle<BinaryResource> resource)
+			{
+				std::lock_guard lock(AsyncResultMutex);
+				AsyncShaderBinary = std::move(resource);
+				AsyncShaderCompleted = true;
+			});
+	}
+
 	void mainLoop()
 	{
 		Loop.Run([this](float deltaTime)
 		{
 			DebugViewController::Update(window, CurrentDebugView);
+			{
+				std::lock_guard lock(AsyncResultMutex);
+				if (AsyncShaderCompleted && !AsyncShaderReported)
+				{
+					std::clog << (AsyncShaderBinary
+						? "[AsyncResource] SPIR-V binary loaded successfully\n"
+						: "[AsyncResource] SPIR-V binary loading failed\n");
+					AsyncShaderReported = true;
+				}
+			}
 			if (HotReload.Poll() > 0)
 			{
 				// A pipeline keeps the shader code it was created from. Rebuild after

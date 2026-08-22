@@ -91,6 +91,9 @@
     <ClCompile Include="Engine\Resources\AsyncResourceManager.cpp">
       <Filter>Engine\Resources</Filter>
     </ClCompile>
+    <ClCompile Include="Engine\Resources\BinaryResource.cpp">
+      <Filter>Engine\Resources</Filter>
+    </ClCompile>
     <ClCompile Include="Engine\Resources\HotReloadResourceManager.cpp">
       <Filter>Engine\Resources</Filter>
     </ClCompile>
@@ -193,6 +196,9 @@
       <Filter>Engine\Resources</Filter>
     </ClInclude>
     <ClInclude Include="Engine\Resources\AsyncResourceManager.h">
+      <Filter>Engine\Resources</Filter>
+    </ClInclude>
+    <ClInclude Include="Engine\Resources\BinaryResource.h">
       <Filter>Engine\Resources</Filter>
     </ClInclude>
     <ClInclude Include="Engine\Resources\HotReloadResourceManager.h">
