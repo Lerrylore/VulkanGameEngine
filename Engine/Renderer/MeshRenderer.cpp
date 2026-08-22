@@ -9,6 +9,7 @@
 #include "../Scene/TransformComponent.h"
 
 #include <glm/gtc/matrix_transform.hpp>
+#include <glm/gtc/matrix_inverse.hpp>
 
 #include <array>
 #include <cstring>
@@ -23,6 +24,7 @@ struct MeshUniformBufferObject
 	glm::mat4 Model;
 	glm::mat4 View;
 	glm::mat4 Projection;
+	glm::mat4 NormalMatrix;
 };
 }
 
@@ -185,13 +187,15 @@ void MeshRenderer::UpdateUniformBuffers(
 	{
 		auto& drawResources = DrawResources[drawIndex];
 		const float direction = drawIndex % 2 == 0 ? 1.0f : -1.0f;
-		const MeshUniformBufferObject uniformBuffer{
-			.Model = drawResources.Component->GetTransform().ModelMatrix() * glm::rotate(
+		const glm::mat4 model = drawResources.Component->GetTransform().ModelMatrix() * glm::rotate(
 				glm::mat4(1.0f),
 				direction * elapsedTime * glm::radians(35.0f),
-				glm::vec3(0.0f, 0.0f, 1.0f)),
+				glm::vec3(0.0f, 0.0f, 1.0f));
+		const MeshUniformBufferObject uniformBuffer{
+			.Model = model,
 			.View = view,
-			.Projection = projection};
+			.Projection = projection,
+			.NormalMatrix = glm::inverseTranspose(model)};
 		std::memcpy(
 			drawResources.UniformBuffersMapped[frameIndex],
 			&uniformBuffer,

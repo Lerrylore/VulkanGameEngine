@@ -55,25 +55,27 @@ constexpr bool enableValidationLayers = true;
 
 struct Vertex
 {
-	glm::vec3 pos;
-	glm::vec3 color;
-	glm::vec2 texCoord;
+	glm::vec3 Position;
+	glm::vec3 Color;
+	glm::vec2 TexCoord;
+	glm::vec3 Normal;
 
-	static vk::VertexInputBindingDescription getBindingDescription()
+	static vk::VertexInputBindingDescription GetBindingDescription()
 	{
 		return { .binding = 0, .stride = sizeof(Vertex), .inputRate = vk::VertexInputRate::eVertex };
 	}
 
-	static std::array<vk::VertexInputAttributeDescription, 3> getAttributeDescriptions()
+	static std::array<vk::VertexInputAttributeDescription, 4> GetAttributeDescriptions()
 	{
-		return { {{.location = 0, .binding = 0, .format = vk::Format::eR32G32B32Sfloat, .offset = offsetof(Vertex, pos)},
-				 {.location = 1, .binding = 0, .format = vk::Format::eR32G32B32Sfloat, .offset = offsetof(Vertex, color)},
-				 {.location = 2, .binding = 0, .format = vk::Format::eR32G32Sfloat, .offset = offsetof(Vertex, texCoord)}} };
+		return { {{.location = 0, .binding = 0, .format = vk::Format::eR32G32B32Sfloat, .offset = offsetof(Vertex, Position)},
+				 {.location = 1, .binding = 0, .format = vk::Format::eR32G32B32Sfloat, .offset = offsetof(Vertex, Color)},
+				 {.location = 2, .binding = 0, .format = vk::Format::eR32G32Sfloat, .offset = offsetof(Vertex, TexCoord)},
+				 {.location = 3, .binding = 0, .format = vk::Format::eR32G32B32Sfloat, .offset = offsetof(Vertex, Normal)}} };
 	}
 
 	bool operator==(const Vertex& other) const
 	{
-		return pos == other.pos && color == other.color && texCoord == other.texCoord;
+		return Position == other.Position && Color == other.Color && TexCoord == other.TexCoord && Normal == other.Normal;
 	}
 };
 
@@ -87,14 +89,17 @@ struct VertexHash
 			seed ^= std::hash<float>{}(component) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
 		};
 
-		combine(vertex.pos.x);
-		combine(vertex.pos.y);
-		combine(vertex.pos.z);
-		combine(vertex.color.r);
-		combine(vertex.color.g);
-		combine(vertex.color.b);
-		combine(vertex.texCoord.x);
-		combine(vertex.texCoord.y);
+		combine(vertex.Position.x);
+		combine(vertex.Position.y);
+		combine(vertex.Position.z);
+		combine(vertex.Color.r);
+		combine(vertex.Color.g);
+		combine(vertex.Color.b);
+		combine(vertex.TexCoord.x);
+		combine(vertex.TexCoord.y);
+		combine(vertex.Normal.x);
+		combine(vertex.Normal.y);
+		combine(vertex.Normal.z);
 		return seed;
 	}
 };
@@ -275,8 +280,8 @@ class VulkanGameEngineApplication
 		vk::PipelineShaderStageCreateInfo fragShaderStageInfo{.stage = vk::ShaderStageFlagBits::eFragment, .module = shaderModule, .pName = "fragMain"};
 		vk::PipelineShaderStageCreateInfo shaderStages[] = {vertShaderStageInfo, fragShaderStageInfo};
 
-		auto                                     bindingDescription = Vertex::getBindingDescription();
-		auto                                     attributeDescriptions = Vertex::getAttributeDescriptions();
+		auto                                     bindingDescription = Vertex::GetBindingDescription();
+		auto                                     attributeDescriptions = Vertex::GetAttributeDescriptions();
 		vk::PipelineVertexInputStateCreateInfo   vertexInputInfo{ .vertexBindingDescriptionCount = 1,
 																 .pVertexBindingDescriptions = &bindingDescription,
 																 .vertexAttributeDescriptionCount = static_cast<uint32_t>(attributeDescriptions.size()),
@@ -748,12 +753,28 @@ class VulkanGameEngineApplication
 				}
 
 				Vertex vertex{
-					.pos = {
+					.Position = {
 						attrib.vertices[positionOffset],
 						attrib.vertices[positionOffset + 1],
 						attrib.vertices[positionOffset + 2]},
-					.color = {1.0f, 1.0f, 1.0f},
-					.texCoord = {0.0f, 0.0f}};
+					.Color = {1.0f, 1.0f, 1.0f},
+					.TexCoord = {0.0f, 0.0f},
+					.Normal = {0.0f, 0.0f, 1.0f}};
+
+				if (index.normal_index < 0)
+				{
+					throw std::runtime_error("OBJ contains a face index without a vertex normal");
+				}
+
+				const std::size_t normalOffset = 3 * static_cast<std::size_t>(index.normal_index);
+				if (normalOffset + 2 >= attrib.normals.size())
+				{
+					throw std::runtime_error("OBJ contains an invalid vertex normal index");
+				}
+				vertex.Normal = {
+					attrib.normals[normalOffset],
+					attrib.normals[normalOffset + 1],
+					attrib.normals[normalOffset + 2]};
 
 				if (index.texcoord_index >= 0)
 				{
@@ -763,7 +784,7 @@ class VulkanGameEngineApplication
 						throw std::runtime_error("OBJ contains an invalid texture-coordinate index");
 					}
 
-					vertex.texCoord = {
+					vertex.TexCoord = {
 						attrib.texcoords[texCoordOffset],
 						1.0f - attrib.texcoords[texCoordOffset + 1]};
 				}
