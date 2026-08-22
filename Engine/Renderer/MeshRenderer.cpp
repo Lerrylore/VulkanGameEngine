@@ -118,13 +118,13 @@ void MeshRenderer::Build(const Scene& scene)
 	}
 
 	const uint32_t descriptorCount = static_cast<uint32_t>(components.size()) * FrameCount;
-	if (descriptorCount > std::numeric_limits<uint32_t>::max() / 2)
+	if (descriptorCount > std::numeric_limits<uint32_t>::max() / 3)
 	{
 		throw std::overflow_error("MeshRenderer sampled image descriptor count exceeds Vulkan limits");
 	}
 	const std::array<vk::DescriptorPoolSize, 2> poolSizes{{
 		{.type = vk::DescriptorType::eUniformBuffer, .descriptorCount = descriptorCount},
-		{.type = vk::DescriptorType::eCombinedImageSampler, .descriptorCount = descriptorCount * 2}}};
+		{.type = vk::DescriptorType::eCombinedImageSampler, .descriptorCount = descriptorCount * 3}}};
 	const vk::DescriptorPoolCreateInfo poolInfo{
 		.flags = vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet,
 		.maxSets = descriptorCount,
@@ -164,6 +164,7 @@ void MeshRenderer::Build(const Scene& scene)
 			drawResources.DescriptorSets = Vulkan.device().allocateDescriptorSets(allocateInfo);
 
 			const auto& baseColorTexture = component->GetMaterial().GetBaseColorTexture();
+			const auto& normalTexture = component->GetMaterial().GetNormalTexture();
 			for (uint32_t frameIndex = 0; frameIndex < FrameCount; ++frameIndex)
 			{
 				const vk::DescriptorBufferInfo bufferInfo{
@@ -178,7 +179,11 @@ void MeshRenderer::Build(const Scene& scene)
 					.sampler = *ShadowMaps.GetSampler(frameIndex),
 					.imageView = *ShadowMaps.GetImageView(frameIndex),
 					.imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal};
-				const std::array<vk::WriteDescriptorSet, 3> writes{{
+				const vk::DescriptorImageInfo normalMapInfo{
+					.sampler = *normalTexture.sampler(),
+					.imageView = *normalTexture.imageView(),
+					.imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal};
+				const std::array<vk::WriteDescriptorSet, 4> writes{{
 					{.dstSet = drawResources.DescriptorSets[frameIndex],
 					 .dstBinding = 0,
 					 .descriptorCount = 1,
@@ -193,7 +198,12 @@ void MeshRenderer::Build(const Scene& scene)
 						 .dstBinding = 2,
 						 .descriptorCount = 1,
 						 .descriptorType = vk::DescriptorType::eCombinedImageSampler,
-						 .pImageInfo = &shadowMapInfo}}};
+						 .pImageInfo = &shadowMapInfo},
+					{.dstSet = drawResources.DescriptorSets[frameIndex],
+						 .dstBinding = 3,
+						 .descriptorCount = 1,
+						 .descriptorType = vk::DescriptorType::eCombinedImageSampler,
+						 .pImageInfo = &normalMapInfo}}};
 				Vulkan.device().updateDescriptorSets(writes, {});
 			}
 		}

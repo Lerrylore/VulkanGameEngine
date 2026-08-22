@@ -4,8 +4,8 @@
 
 #include <stdexcept>
 
-MaterialResource::MaterialResource(TextureResource& baseColorTexture) noexcept
-	: BaseColorTexture(baseColorTexture)
+MaterialResource::MaterialResource(TextureResource& baseColorTexture, TextureResource& normalTexture) noexcept
+	: BaseColorTexture(baseColorTexture), NormalTexture(normalTexture)
 {
 }
 
@@ -17,6 +17,16 @@ TextureResource& MaterialResource::GetBaseColorTexture() noexcept
 const TextureResource& MaterialResource::GetBaseColorTexture() const noexcept
 {
 	return BaseColorTexture;
+}
+
+TextureResource& MaterialResource::GetNormalTexture() noexcept
+{
+	return NormalTexture;
+}
+
+const TextureResource& MaterialResource::GetNormalTexture() const noexcept
+{
+	return NormalTexture;
 }
 
 const glm::vec4& MaterialResource::GetBaseColor() const noexcept

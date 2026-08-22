@@ -3,6 +3,7 @@ struct VSInput {
     float3 inColor;
     float2 inTexCoord;
     float3 inNormal;
+    float4 inTangent;
 };
 
 struct UniformBuffer {
@@ -59,11 +60,13 @@ struct VSOutput
     float2 fragTexCoord;
     float3 worldNormal;
     float3 worldPosition;
+    float4 worldTangent;
     float4 shadowPosition;
 };
 
 Sampler2D texture;
 Sampler2D shadowMap;
+Sampler2D normalMap;
 
 [shader("vertex")]
 VSOutput vertMain(VSInput input) {
@@ -73,6 +76,9 @@ VSOutput vertMain(VSInput input) {
     output.fragTexCoord = input.inTexCoord;
     output.worldNormal = normalize(mul((float3x3)ubo.normalMatrix, input.inNormal));
     output.worldPosition = mul(ubo.model, float4(input.inPosition, 1.0)).xyz;
+    output.worldTangent = float4(
+        normalize(mul((float3x3)ubo.model, input.inTangent.xyz)),
+        input.inTangent.w);
     output.shadowPosition = mul(ubo.shadowViewProjection, mul(ubo.model, float4(input.inPosition, 1.0)));
     return output;
 }
@@ -86,7 +92,15 @@ float4 shadowVertMain(VSInput input) : SV_Position
 [shader("fragment")]
 float4 fragMain(VSOutput vertIn) : SV_TARGET {
    float4 baseColor = texture.Sample(vertIn.fragTexCoord * 1.0);
-   float3 worldNormal = normalize(vertIn.worldNormal);
+   float3 geometricNormal = normalize(vertIn.worldNormal);
+   float3 worldTangent = normalize(
+       vertIn.worldTangent.xyz - geometricNormal * dot(geometricNormal, vertIn.worldTangent.xyz));
+   float3 worldBitangent = normalize(cross(geometricNormal, worldTangent)) * vertIn.worldTangent.w;
+   float3 tangentNormal = normalMap.Sample(vertIn.fragTexCoord * 1.0).xyz * 2.0 - 1.0;
+   float3 worldNormal = normalize(
+       worldTangent * tangentNormal.x +
+       worldBitangent * tangentNormal.y +
+       geometricNormal * tangentNormal.z);
    float3 surfaceToLight = normalize(-ubo.lightDirection.xyz);
    float3 surfaceToCamera = normalize(ubo.cameraPosition.xyz - vertIn.worldPosition);
    float3 halfway = normalize(surfaceToLight + surfaceToCamera);

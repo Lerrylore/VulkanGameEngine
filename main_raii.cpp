@@ -61,18 +61,20 @@ struct Vertex
 	glm::vec3 Color;
 	glm::vec2 TexCoord;
 	glm::vec3 Normal;
+	glm::vec4 Tangent;
 
 	static vk::VertexInputBindingDescription GetBindingDescription()
 	{
 		return { .binding = 0, .stride = sizeof(Vertex), .inputRate = vk::VertexInputRate::eVertex };
 	}
 
-	static std::array<vk::VertexInputAttributeDescription, 4> GetAttributeDescriptions()
+	static std::array<vk::VertexInputAttributeDescription, 5> GetAttributeDescriptions()
 	{
 		return { {{.location = 0, .binding = 0, .format = vk::Format::eR32G32B32Sfloat, .offset = offsetof(Vertex, Position)},
 				 {.location = 1, .binding = 0, .format = vk::Format::eR32G32B32Sfloat, .offset = offsetof(Vertex, Color)},
 				 {.location = 2, .binding = 0, .format = vk::Format::eR32G32Sfloat, .offset = offsetof(Vertex, TexCoord)},
-				 {.location = 3, .binding = 0, .format = vk::Format::eR32G32B32Sfloat, .offset = offsetof(Vertex, Normal)}} };
+				 {.location = 3, .binding = 0, .format = vk::Format::eR32G32B32Sfloat, .offset = offsetof(Vertex, Normal)},
+				 {.location = 4, .binding = 0, .format = vk::Format::eR32G32B32A32Sfloat, .offset = offsetof(Vertex, Tangent)}} };
 	}
 
 	bool operator==(const Vertex& other) const
@@ -178,6 +180,7 @@ class VulkanGameEngineApplication
 
 	std::optional<MeshResource> meshResource;
 	std::optional<TextureResource> textureResource;
+	std::optional<TextureResource> normalMapResource;
 	std::optional<MaterialResource> materialResource;
 
 	std::vector<BufferAllocation> particleBuffers;
@@ -211,7 +214,8 @@ class VulkanGameEngineApplication
 		createParticleGraphicsPipeline();
 		createComputePipeline();
 		createTextureImage();
-		materialResource.emplace(*textureResource);
+		createProceduralNormalMapImage();
+		materialResource.emplace(*textureResource, *normalMapResource);
 		loadModel();
 		createGeometryBuffer();
 		createParticleBuffers();
@@ -622,6 +626,59 @@ class VulkanGameEngineApplication
 		endSingleTimeCommands(std::move(commandBuffer));
 	}
 
+	void createProceduralNormalMapImage()
+	{
+		constexpr uint32_t width = 4;
+		constexpr uint32_t height = 4;
+		constexpr vk::Format normalMapFormat = vk::Format::eR8G8B8A8Unorm;
+		constexpr std::array<uint8_t, width * height * 4> pixels{
+			128, 128, 255, 255, 190, 128, 220, 255, 128, 128, 255, 255, 66, 128, 220, 255,
+			128, 190, 220, 255, 128, 128, 255, 255, 128, 66, 220, 255, 128, 128, 255, 255,
+			128, 128, 255, 255, 66, 128, 220, 255, 128, 128, 255, 255, 190, 128, 220, 255,
+			128, 66, 220, 255, 128, 128, 255, 255, 128, 190, 220, 255, 128, 128, 255, 255};
+
+		normalMapResource.emplace(vulkan, width, height, 1, normalMapFormat);
+		BufferAllocation stagingBuffer{
+			vulkan,
+			sizeof(pixels),
+			vk::BufferUsageFlagBits::eTransferSrc,
+			vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent};
+		void* mapped = stagingBuffer.memory().mapMemory(0, sizeof(pixels));
+		std::memcpy(mapped, pixels.data(), sizeof(pixels));
+		stagingBuffer.memory().unmapMemory();
+
+		vk::raii::CommandBuffer commandBuffer = beginSingleTimeCommands();
+		transitionImageLayout(
+			commandBuffer,
+			normalMapResource->image(),
+			vk::ImageLayout::eUndefined,
+			vk::ImageLayout::eTransferDstOptimal,
+			1);
+		const vk::BufferImageCopy region{
+			.bufferOffset = 0,
+			.bufferRowLength = 0,
+			.bufferImageHeight = 0,
+			.imageSubresource = {
+				.aspectMask = vk::ImageAspectFlagBits::eColor,
+				.mipLevel = 0,
+				.baseArrayLayer = 0,
+				.layerCount = 1},
+			.imageOffset = {0, 0, 0},
+			.imageExtent = {width, height, 1}};
+		commandBuffer.copyBufferToImage(
+			*stagingBuffer.buffer(),
+			*normalMapResource->image(),
+			vk::ImageLayout::eTransferDstOptimal,
+			region);
+		transitionImageLayout(
+			commandBuffer,
+			normalMapResource->image(),
+			vk::ImageLayout::eTransferDstOptimal,
+			vk::ImageLayout::eShaderReadOnlyOptimal,
+			1);
+		endSingleTimeCommands(std::move(commandBuffer));
+	}
+
 	void generateMipmaps(vk::raii::CommandBuffer& commandBuffer,
 		vk::raii::Image& image,
 		vk::Format               imageFormat,
@@ -775,10 +832,11 @@ class VulkanGameEngineApplication
 
 	void createDescriptorSetLayout() 
 	{
-		std::array<vk::DescriptorSetLayoutBinding, 3> bindings{
+		std::array<vk::DescriptorSetLayoutBinding, 4> bindings{
 			{{.binding = 0, .descriptorType = vk::DescriptorType::eUniformBuffer, .descriptorCount = 1, .stageFlags = vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment},
 			 {.binding = 1, .descriptorType = vk::DescriptorType::eCombinedImageSampler, .descriptorCount = 1, .stageFlags = vk::ShaderStageFlagBits::eFragment},
-			 {.binding = 2, .descriptorType = vk::DescriptorType::eCombinedImageSampler, .descriptorCount = 1, .stageFlags = vk::ShaderStageFlagBits::eFragment}} };
+			 {.binding = 2, .descriptorType = vk::DescriptorType::eCombinedImageSampler, .descriptorCount = 1, .stageFlags = vk::ShaderStageFlagBits::eFragment},
+			 {.binding = 3, .descriptorType = vk::DescriptorType::eCombinedImageSampler, .descriptorCount = 1, .stageFlags = vk::ShaderStageFlagBits::eFragment}} };
 
 		vk::DescriptorSetLayoutCreateInfo layoutInfo{ .bindingCount = static_cast<uint32_t>(bindings.size()), .pBindings = bindings.data() };
 
@@ -833,7 +891,8 @@ class VulkanGameEngineApplication
 						attrib.vertices[positionOffset + 2]},
 					.Color = {1.0f, 1.0f, 1.0f},
 					.TexCoord = {0.0f, 0.0f},
-					.Normal = {0.0f, 0.0f, 1.0f}};
+					.Normal = {0.0f, 0.0f, 1.0f},
+					.Tangent = {1.0f, 0.0f, 0.0f, 1.0f}};
 
 				if (index.normal_index < 0)
 				{
@@ -876,6 +935,50 @@ class VulkanGameEngineApplication
 		if (vertices.empty() || indices.empty())
 		{
 			throw std::runtime_error("OBJ model contains no renderable geometry: " + MODEL_PATH);
+		}
+
+		std::vector<glm::vec3> tangentSums(vertices.size(), glm::vec3(0.0f));
+		std::vector<glm::vec3> bitangentSums(vertices.size(), glm::vec3(0.0f));
+		for (std::size_t index = 0; index + 2 < indices.size(); index += 3)
+		{
+			const Vertex& vertex0 = vertices[indices[index]];
+			const Vertex& vertex1 = vertices[indices[index + 1]];
+			const Vertex& vertex2 = vertices[indices[index + 2]];
+			const glm::vec3 edge1 = vertex1.Position - vertex0.Position;
+			const glm::vec3 edge2 = vertex2.Position - vertex0.Position;
+			const glm::vec2 uvEdge1 = vertex1.TexCoord - vertex0.TexCoord;
+			const glm::vec2 uvEdge2 = vertex2.TexCoord - vertex0.TexCoord;
+			const float determinant = uvEdge1.x * uvEdge2.y - uvEdge1.y * uvEdge2.x;
+			if (glm::abs(determinant) < 0.000001f)
+			{
+				continue;
+			}
+
+			const float inverseDeterminant = 1.0f / determinant;
+			const glm::vec3 tangent = (edge1 * uvEdge2.y - edge2 * uvEdge1.y) * inverseDeterminant;
+			const glm::vec3 bitangent = (edge2 * uvEdge1.x - edge1 * uvEdge2.x) * inverseDeterminant;
+			tangentSums[indices[index]] += tangent;
+			tangentSums[indices[index + 1]] += tangent;
+			tangentSums[indices[index + 2]] += tangent;
+			bitangentSums[indices[index]] += bitangent;
+			bitangentSums[indices[index + 1]] += bitangent;
+			bitangentSums[indices[index + 2]] += bitangent;
+		}
+
+		for (std::size_t index = 0; index < vertices.size(); ++index)
+		{
+			const glm::vec3 normal = glm::normalize(vertices[index].Normal);
+			glm::vec3 tangent = tangentSums[index] - normal * glm::dot(normal, tangentSums[index]);
+			if (glm::length(tangent) < 0.000001f)
+			{
+				const glm::vec3 reference = glm::abs(normal.z) < 0.9f
+					? glm::vec3(0.0f, 0.0f, 1.0f)
+					: glm::vec3(0.0f, 1.0f, 0.0f);
+				tangent = glm::cross(reference, normal);
+			}
+			tangent = glm::normalize(tangent);
+			const float handedness = glm::dot(glm::cross(normal, tangent), bitangentSums[index]) < 0.0f ? -1.0f : 1.0f;
+			vertices[index].Tangent = glm::vec4(tangent, handedness);
 		}
 
 #ifndef NDEBUG
