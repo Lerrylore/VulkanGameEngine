@@ -26,7 +26,7 @@
 #include "Engine/Resources/MeshResource.h"
 #include "Engine/Resources/TextureResource.h"
 #include "Engine/Scene/GameObject.h"
-#include "Engine/Scene/RenderComponent.h"
+#include "Engine/Scene/MeshComponent.h"
 #include "Engine/Scene/Scene.h"
 #include "Engine/Scene/TransformComponent.h"
 #include "Engine/Vulkan/VulkanContext.h"
@@ -105,7 +105,7 @@ struct UniformBufferObject
 
 struct RenderObjectResources
 {
-	RenderComponent*                      Component = nullptr;
+	MeshComponent*                        Component = nullptr;
 	std::vector<BufferAllocation>        UniformBuffers;
 	std::vector<void*>                   UniformBuffersMapped;
 	std::vector<vk::raii::DescriptorSet> DescriptorSets;
@@ -890,19 +890,19 @@ class VulkanGameEngineApplication
 		centerObject.GetTransform().SetPosition({0.0f, 0.0f, 0.0f});
 		centerObject.GetTransform().SetRotation({0.0f, 0.0f, 0.0f});
 		centerObject.GetTransform().SetScale({0.7f, 0.7f, 0.7f});
-		RenderObjects[0].Component = &centerObject.AddComponent<RenderComponent>(*meshResource);
+		RenderObjects[0].Component = &centerObject.AddComponent<MeshComponent>(*meshResource);
 
 		auto& leftObject = scene.CreateGameObject();
 		leftObject.GetTransform().SetPosition({-1.35f, 0.0f, -0.35f});
 		leftObject.GetTransform().SetRotation({0.0f, 0.0f, glm::radians(-25.0f)});
 		leftObject.GetTransform().SetScale({0.55f, 0.55f, 0.55f});
-		RenderObjects[1].Component = &leftObject.AddComponent<RenderComponent>(*meshResource);
+		RenderObjects[1].Component = &leftObject.AddComponent<MeshComponent>(*meshResource);
 
 		auto& rightObject = scene.CreateGameObject();
 		rightObject.GetTransform().SetPosition({1.35f, 0.0f, -0.35f});
 		rightObject.GetTransform().SetRotation({0.0f, 0.0f, glm::radians(25.0f)});
 		rightObject.GetTransform().SetScale({0.55f, 0.55f, 0.55f});
-		RenderObjects[2].Component = &rightObject.AddComponent<RenderComponent>(*meshResource);
+		RenderObjects[2].Component = &rightObject.AddComponent<MeshComponent>(*meshResource);
 	}
 
 	void createUniformBuffers()
@@ -1155,7 +1155,7 @@ class VulkanGameEngineApplication
 		commandBuffer.setViewport(0, vk::Viewport(0.0f, 0.0f, static_cast<float>(swapChainExtent.width), static_cast<float>(swapChainExtent.height), 0.0f, 1.0f));
 		commandBuffer.setScissor(0, vk::Rect2D(vk::Offset2D(0, 0), swapChainExtent));
 
-		// Pipeline and texture are shared. Each RenderComponent selects the mesh,
+		// Pipeline and texture are shared. Each MeshComponent selects the mesh,
 		// while its descriptor set selects the per-object transform buffer.
 		for (const auto &renderObject : RenderObjects)
 		{

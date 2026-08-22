@@ -70,7 +70,7 @@
     <ClCompile Include="Engine\Scene\GameObject.cpp">
       <Filter>Engine\Scene</Filter>
     </ClCompile>
-    <ClCompile Include="Engine\Scene\RenderComponent.cpp">
+    <ClCompile Include="Engine\Scene\MeshComponent.cpp">
       <Filter>Engine\Scene</Filter>
     </ClCompile>
     <ClCompile Include="Engine\Scene\Scene.cpp">
@@ -114,7 +114,7 @@
     <ClInclude Include="Engine\Scene\GameObject.h">
       <Filter>Engine\Scene</Filter>
     </ClInclude>
-    <ClInclude Include="Engine\Scene\RenderComponent.h">
+    <ClInclude Include="Engine\Scene\MeshComponent.h">
       <Filter>Engine\Scene</Filter>
     </ClInclude>
     <ClInclude Include="Engine\Scene\Scene.h">

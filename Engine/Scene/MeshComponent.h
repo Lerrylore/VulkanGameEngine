@@ -5,10 +5,10 @@
 class MeshResource;
 class TransformComponent;
 
-class RenderComponent final : public Component
+class MeshComponent final : public Component
 {
   public:
-	explicit RenderComponent(MeshResource& mesh) noexcept;
+	explicit MeshComponent(MeshResource& mesh) noexcept;
 
 	[[nodiscard]] MeshResource& GetMesh() noexcept;
 	[[nodiscard]] const MeshResource& GetMesh() const noexcept;
