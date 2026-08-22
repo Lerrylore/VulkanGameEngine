@@ -25,6 +25,7 @@
 #include "Engine/Renderer/SwapchainResources.h"
 #include "Engine/Resources/BufferAllocation.h"
 #include "Engine/Resources/ImageAllocation.h"
+#include "Engine/Resources/MeshResource.h"
 #include "Engine/Scene/GameObject.h"
 #include "Engine/Vulkan/VulkanContext.h"
 
@@ -177,9 +178,7 @@ class VulkanGameEngineApplication
 	vk::raii::PipelineLayout      computePipelineLayout = nullptr;
 	vk::raii::Pipeline            computePipeline = nullptr;
 
-	std::optional<BufferAllocation> geometryBuffer;
-	vk::DeviceSize         vertexBufferOffset   = 0;
-	vk::DeviceSize         indexBufferOffset    = 0;
+	std::optional<MeshResource> meshResource;
 
 	std::vector<BufferAllocation> particleBuffers;
 	std::vector<BufferAllocation> computeUniformBuffers;
@@ -857,8 +856,9 @@ class VulkanGameEngineApplication
 		const vk::DeviceSize indexBufferSize  = sizeof(indices[0]) * indices.size();
 		const vk::DeviceSize indexAlignment   = sizeof(indices[0]);
 
-		vertexBufferOffset = 0;
-		indexBufferOffset  = ((vertexBufferSize + indexAlignment - 1) / indexAlignment) * indexAlignment;
+		const vk::DeviceSize vertexBufferOffset = 0;
+		const vk::DeviceSize indexBufferOffset =
+			((vertexBufferSize + indexAlignment - 1) / indexAlignment) * indexAlignment;
 		const vk::DeviceSize geometryBufferSize = indexBufferOffset + indexBufferSize;
 
 		BufferAllocation stagingBuffer{
@@ -873,15 +873,15 @@ class VulkanGameEngineApplication
 		memcpy(static_cast<char*>(dataStaging) + indexBufferOffset, indices.data(), static_cast<size_t>(indexBufferSize));
 		stagingBuffer.memory().unmapMemory();
 
-		geometryBuffer.emplace(
+		meshResource.emplace(
 			vulkan,
 			geometryBufferSize,
-			vk::BufferUsageFlagBits::eVertexBuffer |
-				vk::BufferUsageFlagBits::eIndexBuffer |
-				vk::BufferUsageFlagBits::eTransferDst,
-			vk::MemoryPropertyFlagBits::eDeviceLocal);
+			vertexBufferOffset,
+			indexBufferOffset,
+			vk::IndexTypeValue<decltype(indices)::value_type>::value,
+			static_cast<uint32_t>(indices.size()));
 
-		copyBuffer(stagingBuffer.buffer(), geometryBuffer->buffer(), geometryBufferSize);
+		copyBuffer(stagingBuffer.buffer(), meshResource->buffer(), geometryBufferSize);
 	}
 
 	void createParticleBuffers()
@@ -1185,8 +1185,8 @@ class VulkanGameEngineApplication
 
 		commandBuffer.beginRendering(renderingInfo);
 		commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, *graphicsPipeline);
-		commandBuffer.bindVertexBuffers(0, *geometryBuffer->buffer(), {vertexBufferOffset});
-		commandBuffer.bindIndexBuffer(*geometryBuffer->buffer(), indexBufferOffset, vk::IndexTypeValue<decltype(indices)::value_type>::value);
+		commandBuffer.bindVertexBuffers(0, *meshResource->buffer(), {meshResource->vertexOffset()});
+		commandBuffer.bindIndexBuffer(*meshResource->buffer(), meshResource->indexOffset(), meshResource->indexType());
 		commandBuffer.setViewport(0, vk::Viewport(0.0f, 0.0f, static_cast<float>(swapChainExtent.width), static_cast<float>(swapChainExtent.height), 0.0f, 1.0f));
 		commandBuffer.setScissor(0, vk::Rect2D(vk::Offset2D(0, 0), swapChainExtent));
 
@@ -1200,7 +1200,7 @@ class VulkanGameEngineApplication
 				0,
 				*gameObject.descriptorSets[frameIndex],
 				nullptr);
-			commandBuffer.drawIndexed(static_cast<uint32_t>(indices.size()), 1, 0, 0, 0);
+			commandBuffer.drawIndexed(meshResource->indexCount(), 1, 0, 0, 0);
 		}
 
 		commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, *particleGraphicsPipeline);

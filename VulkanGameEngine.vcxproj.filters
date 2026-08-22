@@ -55,6 +55,9 @@
     <ClCompile Include="Engine\Resources\BufferAllocation.cpp">
       <Filter>Engine\Resources</Filter>
     </ClCompile>
+    <ClCompile Include="Engine\Resources\MeshResource.cpp">
+      <Filter>Engine\Resources</Filter>
+    </ClCompile>
     <ClCompile Include="Engine\Scene\GameObject.cpp">
       <Filter>Engine\Scene</Filter>
     </ClCompile>
@@ -76,6 +79,9 @@
       <Filter>Engine\Resources</Filter>
     </ClInclude>
     <ClInclude Include="Engine\Resources\BufferAllocation.h">
+      <Filter>Engine\Resources</Filter>
+    </ClInclude>
+    <ClInclude Include="Engine\Resources\MeshResource.h">
       <Filter>Engine\Resources</Filter>
     </ClInclude>
     <ClInclude Include="Engine\Scene\GameObject.h">
