@@ -1,13 +1,15 @@
 #pragma once
 
 #include <glm/glm.hpp>
+#include "Resource.h"
 
 class TextureResource;
 
-class MaterialResource final
+class MaterialResource final : public Resource
 {
   public:
 	MaterialResource(
+		std::string resourceId,
 		TextureResource& baseColorTexture,
 		TextureResource& normalTexture,
 		TextureResource& metallicRoughnessTexture) noexcept;
@@ -33,6 +35,10 @@ class MaterialResource final
 	void SetOcclusionStrength(float strength);
 	[[nodiscard]] const glm::vec4& GetEmissive() const noexcept;
 	void SetEmissive(const glm::vec4& emissive) noexcept;
+
+	protected:
+	[[nodiscard]] bool DoLoad() override;
+	void DoUnload() override;
 
   private:
 	// The texture owner must outlive every material that references it.

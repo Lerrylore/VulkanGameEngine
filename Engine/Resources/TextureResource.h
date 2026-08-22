@@ -1,11 +1,15 @@
 #pragma once
 
 #include "ImageAllocation.h"
+#include "Resource.h"
 
-class TextureResource final
+#include <optional>
+
+class TextureResource final : public Resource
 {
   public:
 	TextureResource(
+		std::string resourceId,
 		VulkanContext& vulkan,
 		uint32_t width,
 		uint32_t height,
@@ -23,9 +27,13 @@ class TextureResource final
 	[[nodiscard]] const vk::raii::Sampler& sampler() const noexcept;
 	[[nodiscard]] uint32_t mipLevels() const noexcept;
 
+	protected:
+	[[nodiscard]] bool DoLoad() override;
+	void DoUnload() override;
+
   private:
 	// Reverse destruction releases sampler and view before their image.
-	ImageAllocation imageAllocation;
+	std::optional<ImageAllocation> imageAllocation;
 	vk::raii::ImageView view = nullptr;
 	vk::raii::Sampler samplerHandle = nullptr;
 	uint32_t mipLevelCount = 0;

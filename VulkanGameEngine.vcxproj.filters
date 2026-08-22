@@ -88,7 +88,25 @@
     <ClCompile Include="Engine\Resources\BinaryFileLoader.cpp">
       <Filter>Engine\Resources</Filter>
     </ClCompile>
+    <ClCompile Include="Engine\Resources\AsyncResourceManager.cpp">
+      <Filter>Engine\Resources</Filter>
+    </ClCompile>
+    <ClCompile Include="Engine\Resources\HotReloadResourceManager.cpp">
+      <Filter>Engine\Resources</Filter>
+    </ClCompile>
     <ClCompile Include="Engine\Resources\MeshResource.cpp">
+      <Filter>Engine\Resources</Filter>
+    </ClCompile>
+    <ClCompile Include="Engine\Resources\Resource.cpp">
+      <Filter>Engine\Resources</Filter>
+    </ClCompile>
+    <ClCompile Include="Engine\Resources\ResourceManager.cpp">
+      <Filter>Engine\Resources</Filter>
+    </ClCompile>
+    <ClCompile Include="Engine\Resources\ResourceStreamingManager.cpp">
+      <Filter>Engine\Resources</Filter>
+    </ClCompile>
+    <ClCompile Include="Engine\Resources\ShaderResource.cpp">
       <Filter>Engine\Resources</Filter>
     </ClCompile>
     <ClCompile Include="Engine\Resources\TextureResource.cpp">
@@ -174,7 +192,25 @@
     <ClInclude Include="Engine\Resources\BinaryFileLoader.h">
       <Filter>Engine\Resources</Filter>
     </ClInclude>
+    <ClInclude Include="Engine\Resources\AsyncResourceManager.h">
+      <Filter>Engine\Resources</Filter>
+    </ClInclude>
+    <ClInclude Include="Engine\Resources\HotReloadResourceManager.h">
+      <Filter>Engine\Resources</Filter>
+    </ClInclude>
     <ClInclude Include="Engine\Resources\MeshResource.h">
+      <Filter>Engine\Resources</Filter>
+    </ClInclude>
+    <ClInclude Include="Engine\Resources\Resource.h">
+      <Filter>Engine\Resources</Filter>
+    </ClInclude>
+    <ClInclude Include="Engine\Resources\ResourceManager.h">
+      <Filter>Engine\Resources</Filter>
+    </ClInclude>
+    <ClInclude Include="Engine\Resources\ResourceStreamingManager.h">
+      <Filter>Engine\Resources</Filter>
+    </ClInclude>
+    <ClInclude Include="Engine\Resources\ShaderResource.h">
       <Filter>Engine\Resources</Filter>
     </ClInclude>
     <ClInclude Include="Engine\Resources\TextureResource.h">

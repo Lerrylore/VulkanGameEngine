@@ -30,9 +30,12 @@
 #include "Engine/Renderer/SwapchainResources.h"
 #include "Engine/Events/EventBus.h"
 #include "Engine/Resources/BufferAllocation.h"
-#include "Engine/Resources/BinaryFileLoader.h"
 #include "Engine/Resources/MaterialResource.h"
 #include "Engine/Resources/MeshResource.h"
+#include "Engine/Resources/ResourceManager.h"
+#include "Engine/Resources/ShaderResource.h"
+#include "Engine/Resources/HotReloadResourceManager.h"
+#include "Engine/Resources/ResourceStreamingManager.h"
 #include "Engine/Resources/TextureResource.h"
 #include "Engine/Resources/TextureFileLoader.h"
 #include "Engine/Services/ServiceLocator.h"
@@ -150,6 +153,12 @@ class VulkanGameEngineApplication
 	vk::raii::PhysicalDevice&        physicalDevice = vulkan.physicalDevice();
 	vk::raii::Device&                device = vulkan.device();
 	vk::raii::Queue&                 queue = vulkan.queue();
+	ResourceManager                  Resources;
+	HotReloadResourceManager         HotReload{Resources};
+	ResourceStreamingManager         Streaming;
+	ResourceHandle<ShaderResource>   MainShader;
+	ResourceHandle<ShaderResource>   ParticleShader;
+	ResourceHandle<ShaderResource>   ComputeShader;
 	SwapchainResources               swapchainResources{vulkan, window};
 	// Temporary aliases until the renderer consumes SwapchainResources directly.
 	vk::raii::SwapchainKHR&          swapChain = swapchainResources.handle();
@@ -176,11 +185,11 @@ class VulkanGameEngineApplication
 	vk::raii::PipelineLayout      computePipelineLayout = nullptr;
 	vk::raii::Pipeline            computePipeline = nullptr;
 
-	std::optional<MeshResource> meshResource;
-	std::optional<TextureResource> textureResource;
-	std::optional<TextureResource> normalMapResource;
-	std::optional<TextureResource> metallicRoughnessMapResource;
-	std::optional<MaterialResource> materialResource;
+	ResourceHandle<MeshResource> meshResource;
+	ResourceHandle<TextureResource> textureResource;
+	ResourceHandle<TextureResource> normalMapResource;
+	ResourceHandle<TextureResource> metallicRoughnessMapResource;
+	ResourceHandle<MaterialResource> materialResource;
 
 	std::vector<BufferAllocation> particleBuffers;
 	std::vector<BufferAllocation> computeUniformBuffers;
@@ -208,25 +217,36 @@ class VulkanGameEngineApplication
 
 	void initVulkan()
 	{
+		loadShaderResources();
 		createDescriptorSetLayout();
 		createComputeDescriptorSetLayout();
 		createGraphicsPipeline();
 		createShadowGraphicsPipeline();
 		createParticleGraphicsPipeline();
 		createComputePipeline();
-		createTextureImage(
-			textureResource,
+		textureResource = createTextureImage(
+			"viking_room_base_color",
 			std::string(ApplicationConfig::BaseColorTexturePath),
 			vk::Format::eR8G8B8A8Srgb);
-		createTextureImage(
-			normalMapResource,
+		normalMapResource = createTextureImage(
+			"viking_room_normal",
 			std::string(ApplicationConfig::NormalTexturePath),
 			vk::Format::eR8G8B8A8Unorm);
-		createTextureImage(
-			metallicRoughnessMapResource,
+		metallicRoughnessMapResource = createTextureImage(
+			"viking_room_metallic_roughness",
 			std::string(ApplicationConfig::MetallicRoughnessTexturePath),
 			vk::Format::eR8G8B8A8Unorm);
-		materialResource.emplace(*textureResource, *normalMapResource, *metallicRoughnessMapResource);
+		materialResource = Resources.Adopt(
+			"viking_room_material",
+			std::make_shared<MaterialResource>(
+				"viking_room_material",
+				*textureResource,
+				*normalMapResource,
+				*metallicRoughnessMapResource));
+		if (!materialResource)
+		{
+			throw std::runtime_error("failed to register viking_room material resource");
+		}
 		loadModel();
 		createGeometryBuffer();
 		createParticleBuffers();
@@ -244,11 +264,46 @@ class VulkanGameEngineApplication
 		DebugViewController::PrintHelp();
 	}
 
+	void loadShaderResources()
+	{
+		MainShader = Resources.Load<ShaderResource>(
+			"slang",
+			vulkan,
+			"Shaders/slang.spv");
+		ParticleShader = Resources.Load<ShaderResource>(
+			"particles",
+			vulkan,
+			"Shaders/particles.spv");
+		ComputeShader = Resources.Load<ShaderResource>(
+			"compute",
+			vulkan,
+			"Shaders/compute.spv");
+
+		if (!MainShader || !ParticleShader || !ComputeShader)
+		{
+			throw std::runtime_error("failed to load one or more shader resources");
+		}
+
+		HotReload.Watch(MainShader, "Shaders/slang.spv");
+		HotReload.Watch(ParticleShader, "Shaders/particles.spv");
+		HotReload.Watch(ComputeShader, "Shaders/compute.spv");
+	}
+
 	void mainLoop()
 	{
 		Loop.Run([this](float deltaTime)
 		{
 			DebugViewController::Update(window, CurrentDebugView);
+			if (HotReload.Poll() > 0)
+			{
+				// A pipeline keeps the shader code it was created from. Rebuild after
+				// the module reload, and wait until old frame work has completed.
+				device.waitIdle();
+				createGraphicsPipeline();
+				createShadowGraphicsPipeline();
+				createParticleGraphicsPipeline();
+				createComputePipeline();
+			}
 			scene.Update(deltaTime);
 			drawFrame();
 		});
@@ -297,10 +352,8 @@ class VulkanGameEngineApplication
 
 	void createGraphicsPipeline()
 	{
-		vk::raii::ShaderModule shaderModule = createShaderModule(BinaryFileLoader::Load("Shaders/slang.spv"));
-
-		vk::PipelineShaderStageCreateInfo vertShaderStageInfo{.stage = vk::ShaderStageFlagBits::eVertex, .module = shaderModule, .pName = "vertMain"};
-		vk::PipelineShaderStageCreateInfo fragShaderStageInfo{.stage = vk::ShaderStageFlagBits::eFragment, .module = shaderModule, .pName = "fragMain"};
+		vk::PipelineShaderStageCreateInfo vertShaderStageInfo{.stage = vk::ShaderStageFlagBits::eVertex, .module = MainShader->module(), .pName = "vertMain"};
+		vk::PipelineShaderStageCreateInfo fragShaderStageInfo{.stage = vk::ShaderStageFlagBits::eFragment, .module = MainShader->module(), .pName = "fragMain"};
 		vk::PipelineShaderStageCreateInfo shaderStages[] = {vertShaderStageInfo, fragShaderStageInfo};
 
 		auto                                     bindingDescription = Vertex::GetBindingDescription();
@@ -364,10 +417,9 @@ class VulkanGameEngineApplication
 
 	void createShadowGraphicsPipeline()
 	{
-		vk::raii::ShaderModule shaderModule = createShaderModule(BinaryFileLoader::Load("Shaders/slang.spv"));
 		vk::PipelineShaderStageCreateInfo vertexShaderStageInfo{
 			.stage = vk::ShaderStageFlagBits::eVertex,
-			.module = shaderModule,
+			.module = MainShader->module(),
 			.pName = "shadowVertMain"};
 
 		auto bindingDescription = Vertex::GetBindingDescription();
@@ -430,10 +482,9 @@ class VulkanGameEngineApplication
 
 	void createParticleGraphicsPipeline()
 	{
-		vk::raii::ShaderModule shaderModule = createShaderModule(BinaryFileLoader::Load("Shaders/particles.spv"));
 		std::array shaderStages{
-			vk::PipelineShaderStageCreateInfo{.stage = vk::ShaderStageFlagBits::eVertex, .module = shaderModule, .pName = "particleVertMain"},
-			vk::PipelineShaderStageCreateInfo{.stage = vk::ShaderStageFlagBits::eFragment, .module = shaderModule, .pName = "particleFragMain"}};
+			vk::PipelineShaderStageCreateInfo{.stage = vk::ShaderStageFlagBits::eVertex, .module = ParticleShader->module(), .pName = "particleVertMain"},
+			vk::PipelineShaderStageCreateInfo{.stage = vk::ShaderStageFlagBits::eFragment, .module = ParticleShader->module(), .pName = "particleFragMain"}};
 
 		auto bindingDescription = Particle::getBindingDescription();
 		auto attributeDescriptions = Particle::getAttributeDescriptions();
@@ -499,10 +550,9 @@ class VulkanGameEngineApplication
 
 	void createComputePipeline()
 	{
-		vk::raii::ShaderModule shaderModule = createShaderModule(BinaryFileLoader::Load("Shaders/compute.spv"));
 		vk::PipelineShaderStageCreateInfo shaderStage{
 			.stage = vk::ShaderStageFlagBits::eCompute,
-			.module = shaderModule,
+			.module = ComputeShader->module(),
 			.pName = "compMain"};
 		vk::PipelineLayoutCreateInfo layoutInfo{
 			.setLayoutCount = 1,
@@ -512,8 +562,8 @@ class VulkanGameEngineApplication
 		computePipeline = vk::raii::Pipeline(device, nullptr, pipelineInfo);
 	}
 
-	void createTextureImage(
-		std::optional<TextureResource>& destination,
+	ResourceHandle<TextureResource> createTextureImage(
+		const std::string& resourceId,
 		const std::string& texturePath,
 		vk::Format textureFormat)
 	{
@@ -597,20 +647,21 @@ class VulkanGameEngineApplication
 		}
 		stagingBuffer.memory().unmapMemory();
 
-		destination.emplace(
+		auto resource = std::make_shared<TextureResource>(
+			resourceId,
 			vulkan,
 			static_cast<uint32_t>(texWidth),
 			static_cast<uint32_t>(texHeight),
 			mipLevels,
 			textureFormat);
-		auto& image = destination->image();
+		auto& image = resource->image();
 
 		vk::raii::CommandBuffer commandBuffer = SingleTimeCommands.Begin();
-		transitionImageLayout(commandBuffer, image, vk::ImageLayout::eUndefined, vk::ImageLayout::eTransferDstOptimal, destination->mipLevels());
+		transitionImageLayout(commandBuffer, image, vk::ImageLayout::eUndefined, vk::ImageLayout::eTransferDstOptimal, resource->mipLevels());
 		if (supportsLinearBlit)
 		{
 			copyBufferToImage(commandBuffer, stagingBuffer.buffer(), image, static_cast<uint32_t>(texWidth), static_cast<uint32_t>(texHeight));
-			generateMipmaps(commandBuffer, image, textureFormat, texWidth, texHeight, destination->mipLevels());
+			generateMipmaps(commandBuffer, image, textureFormat, texWidth, texHeight, resource->mipLevels());
 		}
 		else
 		{
@@ -632,9 +683,10 @@ class VulkanGameEngineApplication
 					.imageExtent = {mip.width, mip.height, 1}});
 			}
 			commandBuffer.copyBufferToImage(*stagingBuffer.buffer(), image, vk::ImageLayout::eTransferDstOptimal, regions);
-			transitionImageLayout(commandBuffer, image, vk::ImageLayout::eTransferDstOptimal, vk::ImageLayout::eShaderReadOnlyOptimal, destination->mipLevels());
+			transitionImageLayout(commandBuffer, image, vk::ImageLayout::eTransferDstOptimal, vk::ImageLayout::eShaderReadOnlyOptimal, resource->mipLevels());
 		}
 		SingleTimeCommands.End(std::move(commandBuffer));
+		return Resources.Adopt(resourceId, std::move(resource));
 	}
 
 	#if 0 // Retained as a learning reference; external texture assets are now loaded above.
@@ -1075,7 +1127,8 @@ class VulkanGameEngineApplication
 		memcpy(static_cast<char*>(dataStaging) + indexBufferOffset, indices.data(), static_cast<size_t>(indexBufferSize));
 		stagingBuffer.memory().unmapMemory();
 
-		meshResource.emplace(
+		auto resource = std::make_shared<MeshResource>(
+			"viking_room_mesh",
 			vulkan,
 			geometryBufferSize,
 			vertexBufferOffset,
@@ -1083,7 +1136,12 @@ class VulkanGameEngineApplication
 			vk::IndexTypeValue<decltype(indices)::value_type>::value,
 			static_cast<uint32_t>(indices.size()));
 
-		copyBuffer(stagingBuffer.buffer(), meshResource->buffer(), geometryBufferSize);
+		copyBuffer(stagingBuffer.buffer(), resource->buffer(), geometryBufferSize);
+		meshResource = Resources.Adopt("viking_room_mesh", std::move(resource));
+		if (!meshResource)
+		{
+			throw std::runtime_error("failed to register viking_room mesh resource");
+		}
 	}
 
 	void createParticleBuffers()
@@ -1132,8 +1190,8 @@ class VulkanGameEngineApplication
 
 	void setupGameObjects()
 	{
-		assert(meshResource.has_value());
-		assert(materialResource.has_value());
+		assert(meshResource);
+		assert(materialResource);
 		materialResource->SetMetallic(1.0f);
 		materialResource->SetRoughness(1.0f);
 		materialResource->SetOcclusionStrength(1.0f);
@@ -1613,14 +1671,6 @@ class VulkanGameEngineApplication
 			0.1f,
 			20.0f);
 		return lightProjection * lightView;
-	}
-
-	[[nodiscard]] vk::raii::ShaderModule createShaderModule(const std::vector<char> &code) const
-	{
-		vk::ShaderModuleCreateInfo createInfo{.codeSize = code.size() * sizeof(char), .pCode = reinterpret_cast<const uint32_t *>(code.data())};
-		vk::raii::ShaderModule     shaderModule{device, createInfo};
-
-		return shaderModule;
 	}
 
 };

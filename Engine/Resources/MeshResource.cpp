@@ -1,13 +1,18 @@
 #include "MeshResource.h"
 
+#include <utility>
+
 MeshResource::MeshResource(
+	std::string resourceId,
 	VulkanContext& vulkan,
 	vk::DeviceSize bufferSize,
 	vk::DeviceSize vertexOffset,
 	vk::DeviceSize indexOffset,
 	vk::IndexType indexType,
 	uint32_t indexCount)
-	: geometryBuffer{
+	: Resource(std::move(resourceId)),
+	  geometryBuffer{
+		std::in_place,
 		vulkan,
 		bufferSize,
 		vk::BufferUsageFlagBits::eVertexBuffer |
@@ -23,12 +28,12 @@ MeshResource::MeshResource(
 
 vk::raii::Buffer& MeshResource::buffer() noexcept
 {
-	return geometryBuffer.buffer();
+	return geometryBuffer->buffer();
 }
 
 const vk::raii::Buffer& MeshResource::buffer() const noexcept
 {
-	return geometryBuffer.buffer();
+	return geometryBuffer->buffer();
 }
 
 vk::DeviceSize MeshResource::vertexOffset() const noexcept
@@ -49,4 +54,14 @@ vk::IndexType MeshResource::indexType() const noexcept
 uint32_t MeshResource::indexCount() const noexcept
 {
 	return drawIndexCount;
+}
+
+bool MeshResource::DoLoad()
+{
+	return geometryBuffer.has_value();
+}
+
+void MeshResource::DoUnload()
+{
+	geometryBuffer.reset();
 }

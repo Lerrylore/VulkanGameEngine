@@ -3,12 +3,15 @@
 #include "TextureResource.h"
 
 #include <stdexcept>
+#include <utility>
 
 MaterialResource::MaterialResource(
+	std::string resourceId,
 	TextureResource& baseColorTexture,
 	TextureResource& normalTexture,
 	TextureResource& metallicRoughnessTexture) noexcept
-	: BaseColorTexture(baseColorTexture),
+	: Resource(std::move(resourceId)),
+	  BaseColorTexture(baseColorTexture),
 	  NormalTexture(normalTexture),
 	  MetallicRoughnessTexture(metallicRoughnessTexture)
 {
@@ -104,4 +107,13 @@ const glm::vec4& MaterialResource::GetEmissive() const noexcept
 void MaterialResource::SetEmissive(const glm::vec4& emissive) noexcept
 {
 	Emissive = emissive;
+}
+
+bool MaterialResource::DoLoad()
+{
+	return true;
+}
+
+void MaterialResource::DoUnload()
+{
 }

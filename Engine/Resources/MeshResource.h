@@ -1,11 +1,15 @@
 #pragma once
 
 #include "BufferAllocation.h"
+#include "Resource.h"
 
-class MeshResource final
+#include <optional>
+
+class MeshResource final : public Resource
 {
   public:
 	MeshResource(
+		std::string resourceId,
 		VulkanContext& vulkan,
 		vk::DeviceSize bufferSize,
 		vk::DeviceSize vertexOffset,
@@ -25,8 +29,12 @@ class MeshResource final
 	[[nodiscard]] vk::IndexType indexType() const noexcept;
 	[[nodiscard]] uint32_t indexCount() const noexcept;
 
+	protected:
+	[[nodiscard]] bool DoLoad() override;
+	void DoUnload() override;
+
   private:
-	BufferAllocation geometryBuffer;
+	std::optional<BufferAllocation> geometryBuffer;
 	vk::DeviceSize vertexBufferOffset = 0;
 	vk::DeviceSize indexBufferOffset = 0;
 	vk::IndexType drawIndexType = vk::IndexType::eUint32;
