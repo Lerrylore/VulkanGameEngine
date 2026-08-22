@@ -4,7 +4,7 @@
 #include <memory>
 #include <typeinfo>
 
-class EventDispatcher;
+class EventBus;
 
 class EventSubscription final
 {
@@ -21,13 +21,13 @@ class EventSubscription final
 	[[nodiscard]] bool IsActive() const noexcept;
 
   private:
-	friend class EventDispatcher;
+	friend class EventBus;
 
-	EventSubscription(EventDispatcher& dispatcher, const std::type_info& eventType, uint64_t listenerId,
-	                  std::weak_ptr<void> dispatcherLifetime) noexcept;
+	EventSubscription(EventBus& eventBus, const std::type_info& eventType, uint64_t listenerId,
+	                  std::weak_ptr<void> eventBusLifetime) noexcept;
 
-	EventDispatcher* Dispatcher = nullptr;
+	EventBus* Bus = nullptr;
 	const std::type_info* EventType = nullptr;
 	uint64_t ListenerId = 0;
-	std::weak_ptr<void> DispatcherLifetime;
+	std::weak_ptr<void> BusLifetime;
 };

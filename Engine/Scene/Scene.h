@@ -1,17 +1,18 @@
 #pragma once
 
-#include "Events/EventDispatcher.h"
+#include "../Events/EventBus.h"
 #include "SceneContext.h"
 
 #include <memory>
 #include <vector>
 
 class GameObject;
+class ServiceLocator;
 
 class Scene final
 {
   public:
-	Scene();
+	explicit Scene(ServiceLocator& serviceLocator) noexcept;
 	~Scene();
 
 	Scene(const Scene&) = delete;
@@ -23,9 +24,9 @@ class Scene final
 	[[nodiscard]] bool IsInitialized() const noexcept;
 
 	template <typename TEvent>
-	void Publish(const TEvent& event)
+	void PublishEvent(const TEvent& event)
 	{
-		Events.Publish(event);
+		Context.GetEventBus().PublishEvent(event);
 	}
 
 	void Initialize();
@@ -33,7 +34,6 @@ class Scene final
 	void Destroy() noexcept;
 
   private:
-	EventDispatcher Events;
 	SceneContext Context;
 	std::vector<std::unique_ptr<GameObject>> GameObjects;
 	bool bInitialized = false;

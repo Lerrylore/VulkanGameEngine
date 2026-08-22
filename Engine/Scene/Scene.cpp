@@ -4,7 +4,7 @@
 
 #include <stdexcept>
 
-Scene::Scene() : Context(Events)
+Scene::Scene(ServiceLocator& serviceLocator) noexcept : Context(serviceLocator)
 {
 }
 

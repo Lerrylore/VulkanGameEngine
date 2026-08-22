@@ -28,16 +28,16 @@ const GameObject& Component::GetOwner() const noexcept
 	return *Owner;
 }
 
-EventDispatcher& Component::GetEventDispatcher() noexcept
+EventBus& Component::GetEventBus()
 {
 	assert(Context != nullptr);
-	return Context->GetEventDispatcher();
+	return Context->GetEventBus();
 }
 
-const EventDispatcher& Component::GetEventDispatcher() const noexcept
+const EventBus& Component::GetEventBus() const
 {
 	assert(Context != nullptr);
-	return Context->GetEventDispatcher();
+	return Context->GetEventBus();
 }
 
 void Component::OnInitialize()

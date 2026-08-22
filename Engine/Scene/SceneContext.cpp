@@ -1,17 +1,18 @@
 #include "SceneContext.h"
 
-#include "Events/EventDispatcher.h"
+#include "../Events/EventBus.h"
+#include "../Services/ServiceLocator.h"
 
-SceneContext::SceneContext(EventDispatcher& eventDispatcher) noexcept : Events(eventDispatcher)
+SceneContext::SceneContext(ServiceLocator& serviceLocator) noexcept : Services(serviceLocator)
 {
 }
 
-EventDispatcher& SceneContext::GetEventDispatcher() noexcept
+EventBus& SceneContext::GetEventBus()
 {
-	return Events;
+	return Services.Get<EventBus>();
 }
 
-const EventDispatcher& SceneContext::GetEventDispatcher() const noexcept
+const EventBus& SceneContext::GetEventBus() const
 {
-	return Events;
+	return Services.Get<EventBus>();
 }

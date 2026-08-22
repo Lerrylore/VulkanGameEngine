@@ -1,15 +1,16 @@
 #pragma once
 
-class EventDispatcher;
+class EventBus;
+class ServiceLocator;
 
 class SceneContext final
 {
   public:
-	explicit SceneContext(EventDispatcher& eventDispatcher) noexcept;
+	explicit SceneContext(ServiceLocator& serviceLocator) noexcept;
 
-	[[nodiscard]] EventDispatcher& GetEventDispatcher() noexcept;
-	[[nodiscard]] const EventDispatcher& GetEventDispatcher() const noexcept;
+	[[nodiscard]] EventBus& GetEventBus();
+	[[nodiscard]] const EventBus& GetEventBus() const;
 
   private:
-	EventDispatcher& Events;
+	ServiceLocator& Services;
 };

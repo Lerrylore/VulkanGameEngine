@@ -25,10 +25,13 @@
     <Filter Include="Engine\Resources">
       <UniqueIdentifier>{76DE2E66-8541-4EAF-89C9-76C35FA53383}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Engine\Services">
+      <UniqueIdentifier>{7049C1CA-FD03-4D8B-B466-EFA91D24124F}</UniqueIdentifier>
+    </Filter>
     <Filter Include="Engine\Scene">
       <UniqueIdentifier>{CB74613A-85CC-4C0B-85D3-10396506BC71}</UniqueIdentifier>
     </Filter>
-    <Filter Include="Engine\Scene\Events">
+    <Filter Include="Engine\Events">
       <UniqueIdentifier>{C4CB0D46-21FB-4DC2-AF57-E9018F38B06B}</UniqueIdentifier>
     </Filter>
     <Filter Include="Engine\ThirdParty">
@@ -76,14 +79,14 @@
     <ClCompile Include="Engine\Scene\Component.cpp">
       <Filter>Engine\Scene</Filter>
     </ClCompile>
-    <ClCompile Include="Engine\Scene\Events\Event.cpp">
-      <Filter>Engine\Scene\Events</Filter>
+    <ClCompile Include="Engine\Events\Event.cpp">
+      <Filter>Engine\Events</Filter>
     </ClCompile>
-    <ClCompile Include="Engine\Scene\Events\EventDispatcher.cpp">
-      <Filter>Engine\Scene\Events</Filter>
+    <ClCompile Include="Engine\Events\EventBus.cpp">
+      <Filter>Engine\Events</Filter>
     </ClCompile>
-    <ClCompile Include="Engine\Scene\Events\EventSubscription.cpp">
-      <Filter>Engine\Scene\Events</Filter>
+    <ClCompile Include="Engine\Events\EventSubscription.cpp">
+      <Filter>Engine\Events</Filter>
     </ClCompile>
     <ClCompile Include="Engine\Scene\GameObject.cpp">
       <Filter>Engine\Scene</Filter>
@@ -99,6 +102,9 @@
     </ClCompile>
     <ClCompile Include="Engine\Scene\TransformComponent.cpp">
       <Filter>Engine\Scene</Filter>
+    </ClCompile>
+    <ClCompile Include="Engine\Services\ServiceLocator.cpp">
+      <Filter>Engine\Services</Filter>
     </ClCompile>
     <ClCompile Include="Engine\ThirdParty\ThirdPartyImplementations.cpp">
       <Filter>Engine\ThirdParty</Filter>
@@ -138,14 +144,14 @@
     <ClInclude Include="Engine\Scene\Component.h">
       <Filter>Engine\Scene</Filter>
     </ClInclude>
-    <ClInclude Include="Engine\Scene\Events\Event.h">
-      <Filter>Engine\Scene\Events</Filter>
+    <ClInclude Include="Engine\Events\Event.h">
+      <Filter>Engine\Events</Filter>
     </ClInclude>
-    <ClInclude Include="Engine\Scene\Events\EventDispatcher.h">
-      <Filter>Engine\Scene\Events</Filter>
+    <ClInclude Include="Engine\Events\EventBus.h">
+      <Filter>Engine\Events</Filter>
     </ClInclude>
-    <ClInclude Include="Engine\Scene\Events\EventSubscription.h">
-      <Filter>Engine\Scene\Events</Filter>
+    <ClInclude Include="Engine\Events\EventSubscription.h">
+      <Filter>Engine\Events</Filter>
     </ClInclude>
     <ClInclude Include="Engine\Scene\GameObject.h">
       <Filter>Engine\Scene</Filter>
@@ -161,6 +167,9 @@
     </ClInclude>
     <ClInclude Include="Engine\Scene\TransformComponent.h">
       <Filter>Engine\Scene</Filter>
+    </ClInclude>
+    <ClInclude Include="Engine\Services\ServiceLocator.h">
+      <Filter>Engine\Services</Filter>
     </ClInclude>
     <ClInclude Include="Engine\Vulkan\VulkanContext.h">
       <Filter>Engine\Vulkan</Filter>

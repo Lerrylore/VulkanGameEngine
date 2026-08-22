@@ -143,14 +143,15 @@
     <ClCompile Include="Engine\Resources\TextureResource.cpp" />
     <ClCompile Include="Engine\Scene\CameraComponent.cpp" />
     <ClCompile Include="Engine\Scene\Component.cpp" />
-    <ClCompile Include="Engine\Scene\Events\Event.cpp" />
-    <ClCompile Include="Engine\Scene\Events\EventDispatcher.cpp" />
-    <ClCompile Include="Engine\Scene\Events\EventSubscription.cpp" />
+    <ClCompile Include="Engine\Events\Event.cpp" />
+    <ClCompile Include="Engine\Events\EventBus.cpp" />
+    <ClCompile Include="Engine\Events\EventSubscription.cpp" />
     <ClCompile Include="Engine\Scene\GameObject.cpp" />
     <ClCompile Include="Engine\Scene\MeshComponent.cpp" />
     <ClCompile Include="Engine\Scene\Scene.cpp" />
     <ClCompile Include="Engine\Scene\SceneContext.cpp" />
     <ClCompile Include="Engine\Scene\TransformComponent.cpp" />
+    <ClCompile Include="Engine\Services\ServiceLocator.cpp" />
     <ClCompile Include="Engine\ThirdParty\ThirdPartyImplementations.cpp" />
     <ClCompile Include="Engine\Vulkan\VulkanContext.cpp" />
   </ItemGroup>
@@ -166,14 +167,15 @@
     <ClInclude Include="Engine\Resources\TextureResource.h" />
     <ClInclude Include="Engine\Scene\CameraComponent.h" />
     <ClInclude Include="Engine\Scene\Component.h" />
-    <ClInclude Include="Engine\Scene\Events\Event.h" />
-    <ClInclude Include="Engine\Scene\Events\EventDispatcher.h" />
-    <ClInclude Include="Engine\Scene\Events\EventSubscription.h" />
+    <ClInclude Include="Engine\Events\Event.h" />
+    <ClInclude Include="Engine\Events\EventBus.h" />
+    <ClInclude Include="Engine\Events\EventSubscription.h" />
     <ClInclude Include="Engine\Scene\GameObject.h" />
     <ClInclude Include="Engine\Scene\MeshComponent.h" />
     <ClInclude Include="Engine\Scene\Scene.h" />
     <ClInclude Include="Engine\Scene\SceneContext.h" />
     <ClInclude Include="Engine\Scene\TransformComponent.h" />
+    <ClInclude Include="Engine\Services\ServiceLocator.h" />
     <ClInclude Include="Engine\Vulkan\VulkanContext.h" />
   </ItemGroup>
   <ItemGroup>

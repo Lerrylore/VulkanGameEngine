@@ -1,6 +1,6 @@
 #pragma once
 
-#include "Events/EventDispatcher.h"
+#include "../Events/EventBus.h"
 
 #include <functional>
 #include <utility>
@@ -31,8 +31,8 @@ class Component
 
 	[[nodiscard]] GameObject& GetOwner() noexcept;
 	[[nodiscard]] const GameObject& GetOwner() const noexcept;
-	[[nodiscard]] EventDispatcher& GetEventDispatcher() noexcept;
-	[[nodiscard]] const EventDispatcher& GetEventDispatcher() const noexcept;
+	[[nodiscard]] EventBus& GetEventBus();
+	[[nodiscard]] const EventBus& GetEventBus() const;
 
 	template <typename TEvent, typename Handler>
 	void Listen(Handler&& handler)
@@ -45,7 +45,7 @@ class Component
 			}
 		};
 		EventSubscriptions.push_back(
-			GetEventDispatcher().Subscribe<TEvent>(std::move(guardedHandler)));
+			GetEventBus().Subscribe<TEvent>(std::move(guardedHandler)));
 	}
 
 	virtual void OnInitialize();

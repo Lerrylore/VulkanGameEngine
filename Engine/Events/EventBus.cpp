@@ -1,22 +1,22 @@
-#include "EventDispatcher.h"
+#include "EventBus.h"
 
 #include <algorithm>
 
-EventDispatcher::EventDispatcher() : LifetimeToken(std::make_shared<uint8_t>(0))
+EventBus::EventBus() : LifetimeToken(std::make_shared<uint8_t>(0))
 {
 }
 
-EventDispatcher::~EventDispatcher()
+EventBus::~EventBus()
 {
 	LifetimeToken.reset();
 }
 
-bool EventDispatcher::IsDispatching() const noexcept
+bool EventBus::IsDispatching() const noexcept
 {
 	return DispatchDepth != 0;
 }
 
-EventSubscription EventDispatcher::Subscribe(const std::type_info& eventType,
+EventSubscription EventBus::Subscribe(const std::type_info& eventType,
                                              std::function<void(const Event&)> handler)
 {
 	const uint64_t listenerId = NextListenerId++;
@@ -24,7 +24,7 @@ EventSubscription EventDispatcher::Subscribe(const std::type_info& eventType,
 	return EventSubscription(*this, eventType, listenerId, LifetimeToken);
 }
 
-void EventDispatcher::Publish(const std::type_info& eventType, const Event& event)
+void EventBus::PublishEvent(const std::type_info& eventType, const Event& event)
 {
 	const std::type_index typeIndex(eventType);
 	const auto listeners = Listeners.find(typeIndex);
@@ -84,7 +84,7 @@ void EventDispatcher::Publish(const std::type_info& eventType, const Event& even
 	}
 }
 
-void EventDispatcher::Unsubscribe(const std::type_info& eventType, uint64_t listenerId) noexcept
+void EventBus::Unsubscribe(const std::type_info& eventType, uint64_t listenerId) noexcept
 {
 	const std::type_index typeIndex(eventType);
 	const auto listeners = Listeners.find(typeIndex);
@@ -107,7 +107,7 @@ void EventDispatcher::Unsubscribe(const std::type_info& eventType, uint64_t list
 	}
 }
 
-void EventDispatcher::RemoveInactiveListeners(const std::type_index& eventType)
+void EventBus::RemoveInactiveListeners(const std::type_index& eventType)
 {
 	const auto listeners = Listeners.find(eventType);
 	if (listeners == Listeners.end())
@@ -122,7 +122,7 @@ void EventDispatcher::RemoveInactiveListeners(const std::type_index& eventType)
 	}
 }
 
-void EventDispatcher::RemoveAllInactiveListeners()
+void EventBus::RemoveAllInactiveListeners()
 {
 	for (auto listeners = Listeners.begin(); listeners != Listeners.end();)
 	{

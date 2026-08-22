@@ -13,16 +13,16 @@
 #include <utility>
 #include <vector>
 
-class EventDispatcher final
+class EventBus final
 {
   public:
-	EventDispatcher();
-	~EventDispatcher();
+	EventBus();
+	~EventBus();
 
-	EventDispatcher(const EventDispatcher&) = delete;
-	EventDispatcher& operator=(const EventDispatcher&) = delete;
-	EventDispatcher(EventDispatcher&&) = delete;
-	EventDispatcher& operator=(EventDispatcher&&) = delete;
+	EventBus(const EventBus&) = delete;
+	EventBus& operator=(const EventBus&) = delete;
+	EventBus(EventBus&&) = delete;
+	EventBus& operator=(EventBus&&) = delete;
 
 	template <typename TEvent, typename Handler>
 	EventSubscription Subscribe(Handler&& handler)
@@ -35,10 +35,10 @@ class EventDispatcher final
 	}
 
 	template <typename TEvent>
-	void Publish(const TEvent& event)
+	void PublishEvent(const TEvent& event)
 	{
 		static_assert(std::is_base_of_v<Event, TEvent>, "TEvent must derive from Event");
-		Publish(typeid(TEvent), event);
+		PublishEvent(typeid(TEvent), event);
 	}
 
 	[[nodiscard]] bool IsDispatching() const noexcept;
@@ -54,7 +54,7 @@ class EventDispatcher final
 	};
 
 	EventSubscription Subscribe(const std::type_info& eventType, std::function<void(const Event&)> handler);
-	void Publish(const std::type_info& eventType, const Event& event);
+	void PublishEvent(const std::type_info& eventType, const Event& event);
 	void Unsubscribe(const std::type_info& eventType, uint64_t listenerId) noexcept;
 	void RemoveInactiveListeners(const std::type_index& eventType);
 	void RemoveAllInactiveListeners();

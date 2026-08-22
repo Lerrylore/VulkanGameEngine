@@ -21,10 +21,12 @@
 #include "Engine/Renderer/FrameResources.h"
 #include "Engine/Renderer/RenderTargetResources.h"
 #include "Engine/Renderer/SwapchainResources.h"
+#include "Engine/Events/EventBus.h"
 #include "Engine/Resources/BufferAllocation.h"
 #include "Engine/Resources/MaterialResource.h"
 #include "Engine/Resources/MeshResource.h"
 #include "Engine/Resources/TextureResource.h"
+#include "Engine/Services/ServiceLocator.h"
 #include "Engine/Scene/CameraComponent.h"
 #include "Engine/Scene/GameObject.h"
 #include "Engine/Scene/MeshComponent.h"
@@ -141,6 +143,7 @@ class VulkanGameEngineApplication
   public:
 	void run()
 	{
+		Services.Register<EventBus>(Events);
 		initVulkan();
 		mainLoop();
 	}
@@ -186,7 +189,9 @@ class VulkanGameEngineApplication
 	std::vector<BufferAllocation> computeUniformBuffers;
 	std::vector<void*>            computeUniformBuffersMapped;
 
-	Scene scene;
+	EventBus Events;
+	ServiceLocator Services;
+	Scene scene{Services};
 	CameraComponent* ActiveCamera = nullptr;
 	vk::raii::DescriptorPool descriptorPool = nullptr;
 	std::array<RenderObjectResources, MAX_OBJECTS> RenderObjects;
