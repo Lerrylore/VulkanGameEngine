@@ -3,12 +3,14 @@
 #include "GameObject.h"
 #include "TransformComponent.h"
 
+#include "../Resources/MaterialResource.h"
 #include "../Resources/MeshResource.h"
 
 #include <cassert>
 #include <stdexcept>
 
-MeshComponent::MeshComponent(MeshResource& mesh) noexcept : Mesh(mesh)
+MeshComponent::MeshComponent(MeshResource& mesh, MaterialResource& material) noexcept
+	: Mesh(mesh), Material(material)
 {
 }
 
@@ -20,6 +22,16 @@ MeshResource& MeshComponent::GetMesh() noexcept
 const MeshResource& MeshComponent::GetMesh() const noexcept
 {
 	return Mesh;
+}
+
+MaterialResource& MeshComponent::GetMaterial() noexcept
+{
+	return Material;
+}
+
+const MaterialResource& MeshComponent::GetMaterial() const noexcept
+{
+	return Material;
 }
 
 TransformComponent& MeshComponent::GetTransform() noexcept

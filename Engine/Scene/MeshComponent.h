@@ -3,15 +3,18 @@
 #include "Component.h"
 
 class MeshResource;
+class MaterialResource;
 class TransformComponent;
 
 class MeshComponent final : public Component
 {
   public:
-	explicit MeshComponent(MeshResource& mesh) noexcept;
+	MeshComponent(MeshResource& mesh, MaterialResource& material) noexcept;
 
 	[[nodiscard]] MeshResource& GetMesh() noexcept;
 	[[nodiscard]] const MeshResource& GetMesh() const noexcept;
+	[[nodiscard]] MaterialResource& GetMaterial() noexcept;
+	[[nodiscard]] const MaterialResource& GetMaterial() const noexcept;
 	[[nodiscard]] TransformComponent& GetTransform() noexcept;
 	[[nodiscard]] const TransformComponent& GetTransform() const noexcept;
 
@@ -22,5 +25,6 @@ class MeshComponent final : public Component
   private:
 	// The resource owner must outlive the Scene that owns this component.
 	MeshResource& Mesh;
+	MaterialResource& Material;
 	TransformComponent* Transform = nullptr;
 };

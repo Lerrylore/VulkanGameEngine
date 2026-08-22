@@ -22,6 +22,7 @@
 #include "Engine/Renderer/RenderTargetResources.h"
 #include "Engine/Renderer/SwapchainResources.h"
 #include "Engine/Resources/BufferAllocation.h"
+#include "Engine/Resources/MaterialResource.h"
 #include "Engine/Resources/MeshResource.h"
 #include "Engine/Resources/TextureResource.h"
 #include "Engine/Scene/CameraComponent.h"
@@ -179,6 +180,7 @@ class VulkanGameEngineApplication
 
 	std::optional<MeshResource> meshResource;
 	std::optional<TextureResource> textureResource;
+	std::optional<MaterialResource> materialResource;
 
 	std::vector<BufferAllocation> particleBuffers;
 	std::vector<BufferAllocation> computeUniformBuffers;
@@ -207,6 +209,7 @@ class VulkanGameEngineApplication
 		createParticleGraphicsPipeline();
 		createComputePipeline();
 		createTextureImage();
+		materialResource.emplace(*textureResource);
 		loadModel();
 		createGeometryBuffer();
 		createParticleBuffers();
@@ -891,24 +894,25 @@ class VulkanGameEngineApplication
 	void setupGameObjects()
 	{
 		assert(meshResource.has_value());
+		assert(materialResource.has_value());
 
 		auto& centerObject = scene.CreateGameObject();
 		centerObject.GetTransform().SetPosition({0.0f, 0.0f, 0.0f});
 		centerObject.GetTransform().SetRotation({0.0f, 0.0f, 0.0f});
 		centerObject.GetTransform().SetScale({0.7f, 0.7f, 0.7f});
-		RenderObjects[0].Component = &centerObject.AddComponent<MeshComponent>(*meshResource);
+		RenderObjects[0].Component = &centerObject.AddComponent<MeshComponent>(*meshResource, *materialResource);
 
 		auto& leftObject = scene.CreateGameObject();
 		leftObject.GetTransform().SetPosition({-1.35f, 0.0f, -0.35f});
 		leftObject.GetTransform().SetRotation({0.0f, 0.0f, glm::radians(-25.0f)});
 		leftObject.GetTransform().SetScale({0.55f, 0.55f, 0.55f});
-		RenderObjects[1].Component = &leftObject.AddComponent<MeshComponent>(*meshResource);
+		RenderObjects[1].Component = &leftObject.AddComponent<MeshComponent>(*meshResource, *materialResource);
 
 		auto& rightObject = scene.CreateGameObject();
 		rightObject.GetTransform().SetPosition({1.35f, 0.0f, -0.35f});
 		rightObject.GetTransform().SetRotation({0.0f, 0.0f, glm::radians(25.0f)});
 		rightObject.GetTransform().SetScale({0.55f, 0.55f, 0.55f});
-		RenderObjects[2].Component = &rightObject.AddComponent<MeshComponent>(*meshResource);
+		RenderObjects[2].Component = &rightObject.AddComponent<MeshComponent>(*meshResource, *materialResource);
 
 		auto& cameraObject = scene.CreateGameObject();
 		cameraObject.GetTransform().SetPosition({2.8f, 2.8f, 3.5f});
@@ -981,6 +985,7 @@ class VulkanGameEngineApplication
 	{
 		for (auto &renderObject : RenderObjects)
 		{
+			auto& baseColorTexture = renderObject.Component->GetMaterial().GetBaseColorTexture();
 			std::vector<vk::DescriptorSetLayout> layouts(MAX_FRAMES_IN_FLIGHT, *descriptorSetLayout);
 			vk::DescriptorSetAllocateInfo allocInfo{ .descriptorPool = descriptorPool,
 													 .descriptorSetCount = static_cast<uint32_t>(layouts.size()),
@@ -991,8 +996,8 @@ class VulkanGameEngineApplication
 			{
 				vk::DescriptorBufferInfo bufferInfo{ .buffer = *renderObject.UniformBuffers[frame].buffer(), .offset = 0, .range = sizeof(UniformBufferObject) };
 				vk::DescriptorImageInfo imageInfo{
-					.sampler = *textureResource->sampler(),
-					.imageView = *textureResource->imageView(),
+					.sampler = *baseColorTexture.sampler(),
+					.imageView = *baseColorTexture.imageView(),
 					.imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal};
 
 				std::array<vk::WriteDescriptorSet, 2> descriptorWrites{ {{.dstSet = renderObject.DescriptorSets[frame],
