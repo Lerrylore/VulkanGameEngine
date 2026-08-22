@@ -20,6 +20,7 @@
 #include <chrono>
 
 #include "Engine/Application/ApplicationLoop.h"
+#include "Engine/Application/DebugViewController.h"
 #include "Engine/Platform/Window.h"
 #include "Engine/Renderer/FrameResources.h"
 #include "Engine/Renderer/MeshRenderer.h"
@@ -238,16 +239,14 @@ class VulkanGameEngineApplication
 		createComputeDescriptorPool();
 		createComputeDescriptorSets();
 		scene.Initialize();
-		std::clog << "[DebugView] 0 Lit, 1 WorldNormal, 2 TangentNormal, 3 Roughness, 4 Metallic, "
-			"5 Shadow, 6 Albedo, 7 GeometricNormal, 8 Tangent, 9 ShadowDepth, "
-			"F1 Diffuse, F2 Specular, F3 Fresnel, F4 AO, F5 Emissive\n";
+		DebugViewController::PrintHelp();
 	}
 
 	void mainLoop()
 	{
 		Loop.Run([this](float deltaTime)
 		{
-			UpdateDebugViewMode();
+			DebugViewController::Update(window, CurrentDebugView);
 			scene.Update(deltaTime);
 			drawFrame();
 		});
@@ -639,6 +638,7 @@ class VulkanGameEngineApplication
 		endSingleTimeCommands(std::move(commandBuffer));
 	}
 
+	#if 0 // Retained as a learning reference; external texture assets are now loaded above.
 	void createProceduralNormalMapImage()
 	{
 		constexpr uint32_t width = 4;
@@ -745,6 +745,8 @@ class VulkanGameEngineApplication
 			1);
 		endSingleTimeCommands(std::move(commandBuffer));
 	}
+
+	#endif
 
 	void generateMipmaps(vk::raii::CommandBuffer& commandBuffer,
 		vk::raii::Image& image,
@@ -1602,39 +1604,6 @@ class VulkanGameEngineApplication
 			shadowViewProjection,
 			time,
 			CurrentDebugView);
-	}
-
-	void UpdateDebugViewMode()
-	{
-		static constexpr std::array<std::pair<WindowKey, DebugViewMode>, 15> modes{{
-			{WindowKey::Number0, DebugViewMode::Lit},
-			{WindowKey::Number1, DebugViewMode::WorldNormal},
-			{WindowKey::Number2, DebugViewMode::TangentNormal},
-			{WindowKey::Number3, DebugViewMode::Roughness},
-			{WindowKey::Number4, DebugViewMode::Metallic},
-			{WindowKey::Number5, DebugViewMode::Shadow},
-			{WindowKey::Number6, DebugViewMode::Albedo},
-			{WindowKey::Number7, DebugViewMode::GeometricNormal},
-			{WindowKey::Number8, DebugViewMode::Tangent},
-			{WindowKey::Number9, DebugViewMode::ShadowDepth},
-			{WindowKey::F1, DebugViewMode::Diffuse},
-			{WindowKey::F2, DebugViewMode::Specular},
-			{WindowKey::F3, DebugViewMode::Fresnel},
-			{WindowKey::F4, DebugViewMode::AmbientOcclusion},
-			{WindowKey::F5, DebugViewMode::Emissive}}};
-
-		for (const auto [key, mode] : modes)
-		{
-			if (window.IsKeyDown(key))
-			{
-				if (CurrentDebugView != mode)
-				{
-					CurrentDebugView = mode;
-					std::clog << "[DebugView] mode " << static_cast<uint32_t>(mode) << '\n';
-				}
-				return;
-			}
-		}
 	}
 
 	[[nodiscard]] glm::mat4 GetShadowViewProjection() const

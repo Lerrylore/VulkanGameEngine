@@ -48,6 +48,9 @@
     <ClCompile Include="Engine\Application\ApplicationLoop.cpp">
       <Filter>Engine\Application</Filter>
     </ClCompile>
+    <ClCompile Include="Engine\Application\DebugViewController.cpp">
+      <Filter>Engine\Application</Filter>
+    </ClCompile>
     <ClCompile Include="main_raii.cpp" />
     <ClCompile Include="Engine\Vulkan\VulkanContext.cpp">
       <Filter>Engine\Vulkan</Filter>
@@ -121,6 +124,9 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Engine\Application\ApplicationLoop.h">
+      <Filter>Engine\Application</Filter>
+    </ClInclude>
+    <ClInclude Include="Engine\Application\DebugViewController.h">
       <Filter>Engine\Application</Filter>
     </ClInclude>
     <ClInclude Include="Engine\Platform\Window.h">
