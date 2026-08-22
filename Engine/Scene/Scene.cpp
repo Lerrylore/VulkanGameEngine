@@ -6,91 +6,91 @@
 
 Scene::~Scene()
 {
-	destroy();
+	Destroy();
 }
 
-GameObject& Scene::createGameObject()
+GameObject& Scene::CreateGameObject()
 {
-	if (destroyed_)
+	if (bDestroyed)
 	{
 		throw std::logic_error("Cannot create a GameObject in a destroyed Scene");
 	}
 
 	auto gameObject = std::make_unique<GameObject>();
 	auto& result = *gameObject;
-	gameObjects_.push_back(std::move(gameObject));
+	GameObjects.push_back(std::move(gameObject));
 
-	if (initialized_)
+	if (bInitialized)
 	{
 		try
 		{
-			result.initialize();
+			result.Initialize();
 		}
 		catch (...)
 		{
-			gameObjects_.pop_back();
+			GameObjects.pop_back();
 			throw;
 		}
 	}
 	return result;
 }
 
-bool Scene::isInitialized() const noexcept
+bool Scene::IsInitialized() const noexcept
 {
-	return initialized_;
+	return bInitialized;
 }
 
-void Scene::initialize()
+void Scene::Initialize()
 {
-	if (destroyed_)
+	if (bDestroyed)
 	{
 		throw std::logic_error("Cannot initialize a destroyed Scene");
 	}
-	if (initialized_)
+	if (bInitialized)
 	{
 		return;
 	}
 
 	try
 	{
-		for (size_t index = 0; index < gameObjects_.size(); ++index)
+		for (size_t index = 0; index < GameObjects.size(); ++index)
 		{
-			gameObjects_[index]->initialize();
+			GameObjects[index]->Initialize();
 		}
-		initialized_ = true;
+		bInitialized = true;
 	}
 	catch (...)
 	{
-		destroy();
+		Destroy();
 		throw;
 	}
 }
 
-void Scene::update(float deltaTime)
+void Scene::Update(float deltaTime)
 {
-	if (!initialized_ || destroyed_)
+	if (!bInitialized || bDestroyed)
 	{
 		return;
 	}
 
-	const size_t gameObjectCount = gameObjects_.size();
+	const size_t gameObjectCount = GameObjects.size();
 	for (size_t index = 0; index < gameObjectCount; ++index)
 	{
-		gameObjects_[index]->update(deltaTime);
+		GameObjects[index]->Update(deltaTime);
 	}
 }
 
-void Scene::destroy() noexcept
+void Scene::Destroy() noexcept
 {
-	if (destroyed_)
+	if (bDestroyed)
 	{
 		return;
 	}
 
-	destroyed_ = true;
-	initialized_ = false;
-	for (auto gameObject = gameObjects_.rbegin(); gameObject != gameObjects_.rend(); ++gameObject)
+	bDestroyed = true;
+	bInitialized = false;
+	for (auto gameObject = GameObjects.rbegin(); gameObject != GameObjects.rend(); ++gameObject)
 	{
-		(*gameObject)->destroy();
+		(*gameObject)->Destroy();
 	}
 }

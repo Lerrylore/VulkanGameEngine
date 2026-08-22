@@ -22,32 +22,32 @@ class GameObject final
 	GameObject& operator=(GameObject&&) = delete;
 
 	template <typename T, typename... Args>
-	T& addComponent(Args&&... args)
+	T& AddComponent(Args&&... args)
 	{
 		static_assert(std::is_base_of_v<Component, T>, "T must derive from Component");
-		if (destroyed_)
+		if (bDestroyed)
 		{
 			throw std::logic_error("Cannot add a component to a destroyed GameObject");
 		}
 
 		auto component = std::make_unique<T>(std::forward<Args>(args)...);
-		component->attach(*this);
+		component->Attach(*this);
 		auto& result = *component;
-		const size_t componentCountBeforeInsertion = components_.size();
-		components_.push_back(std::move(component));
+		const size_t componentCountBeforeInsertion = Components.size();
+		Components.push_back(std::move(component));
 
-		if (initialized_)
+		if (bInitialized)
 		{
 			try
 			{
-				result.initialize();
+				result.Initialize();
 			}
 			catch (...)
 			{
-				while (components_.size() > componentCountBeforeInsertion)
+				while (Components.size() > componentCountBeforeInsertion)
 				{
-					components_.back()->destroy();
-					components_.pop_back();
+					Components.back()->Destroy();
+					Components.pop_back();
 				}
 				throw;
 			}
@@ -56,11 +56,11 @@ class GameObject final
 	}
 
 	template <typename T>
-	[[nodiscard]] T* getComponent() noexcept
+	[[nodiscard]] T* GetComponent() noexcept
 	{
 		static_assert(std::is_base_of_v<Component, T>, "T must derive from Component");
 
-		for (const auto& component : components_)
+		for (const auto& component : Components)
 		{
 			if (auto* result = dynamic_cast<T*>(component.get()))
 			{
@@ -71,11 +71,11 @@ class GameObject final
 	}
 
 	template <typename T>
-	[[nodiscard]] const T* getComponent() const noexcept
+	[[nodiscard]] const T* GetComponent() const noexcept
 	{
 		static_assert(std::is_base_of_v<Component, T>, "T must derive from Component");
 
-		for (const auto& component : components_)
+		for (const auto& component : Components)
 		{
 			if (const auto* result = dynamic_cast<const T*>(component.get()))
 			{
@@ -85,17 +85,17 @@ class GameObject final
 		return nullptr;
 	}
 
-	[[nodiscard]] TransformComponent& transform() noexcept;
-	[[nodiscard]] const TransformComponent& transform() const noexcept;
-	[[nodiscard]] bool isInitialized() const noexcept;
+	[[nodiscard]] TransformComponent& GetTransform() noexcept;
+	[[nodiscard]] const TransformComponent& GetTransform() const noexcept;
+	[[nodiscard]] bool IsInitialized() const noexcept;
 
-	void initialize();
-	void update(float deltaTime);
-	void destroy() noexcept;
+	void Initialize();
+	void Update(float deltaTime);
+	void Destroy() noexcept;
 
   private:
-	std::vector<std::unique_ptr<Component>> components_;
-	TransformComponent* transform_ = nullptr;
-	bool initialized_ = false;
-	bool destroyed_ = false;
+	std::vector<std::unique_ptr<Component>> Components;
+	TransformComponent* Transform = nullptr;
+	bool bInitialized = false;
+	bool bDestroyed = false;
 };

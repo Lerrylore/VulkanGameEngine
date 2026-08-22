@@ -4,87 +4,87 @@
 
 Component::~Component() = default;
 
-Component::State Component::state() const noexcept
+Component::State Component::GetState() const noexcept
 {
-	return state_;
+	return CurrentState;
 }
 
-bool Component::isActive() const noexcept
+bool Component::IsActive() const noexcept
 {
-	return state_ == State::Active;
+	return CurrentState == State::Active;
 }
 
-GameObject& Component::owner() noexcept
+GameObject& Component::GetOwner() noexcept
 {
-	assert(owner_ != nullptr);
-	return *owner_;
+	assert(Owner != nullptr);
+	return *Owner;
 }
 
-const GameObject& Component::owner() const noexcept
+const GameObject& Component::GetOwner() const noexcept
 {
-	assert(owner_ != nullptr);
-	return *owner_;
+	assert(Owner != nullptr);
+	return *Owner;
 }
 
-void Component::onInitialize()
-{
-}
-
-void Component::onUpdate(float)
+void Component::OnInitialize()
 {
 }
 
-void Component::onDestroy() noexcept
+void Component::OnUpdate(float)
 {
 }
 
-void Component::attach(GameObject& owner) noexcept
+void Component::OnDestroy() noexcept
 {
-	assert(owner_ == nullptr);
-	owner_ = &owner;
 }
 
-void Component::initialize()
+void Component::Attach(GameObject& owner) noexcept
 {
-	if (state_ != State::Uninitialized)
+	assert(Owner == nullptr);
+	Owner = &owner;
+}
+
+void Component::Initialize()
+{
+	if (CurrentState != State::Uninitialized)
 	{
 		return;
 	}
 
-	state_ = State::Initializing;
+	CurrentState = State::Initializing;
 	try
 	{
-		onInitialize();
-		state_ = State::Active;
+		OnInitialize();
+		CurrentState = State::Active;
 	}
 	catch (...)
 	{
-		state_ = State::Destroying;
-		onDestroy();
-		state_ = State::Destroyed;
+		CurrentState = State::Destroying;
+		OnDestroy();
+		CurrentState = State::Destroyed;
 		throw;
 	}
 }
 
-void Component::update(float deltaTime)
+void Component::Update(float deltaTime)
 {
-	if (state_ == State::Active)
+	if (CurrentState == State::Active)
 	{
-		onUpdate(deltaTime);
+		OnUpdate(deltaTime);
 	}
 }
 
-void Component::destroy() noexcept
+void Component::Destroy() noexcept
 {
-	if (state_ == State::Destroyed || state_ == State::Destroying)
+	if (CurrentState == State::Destroyed || CurrentState == State::Destroying)
 	{
 		return;
 	}
 
-	if (state_ == State::Active)
+	if (CurrentState == State::Active)
 	{
-		state_ = State::Destroying;
-		onDestroy();
+		CurrentState = State::Destroying;
+		OnDestroy();
 	}
-	state_ = State::Destroyed;
+	CurrentState = State::Destroyed;
 }

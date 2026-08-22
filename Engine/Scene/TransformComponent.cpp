@@ -2,42 +2,42 @@
 
 #include <glm/gtc/matrix_transform.hpp>
 
-void TransformComponent::setPosition(const glm::vec3& position) noexcept
+void TransformComponent::SetPosition(const glm::vec3& position) noexcept
 {
-	position_ = position;
+	Position = position;
 }
 
-void TransformComponent::setRotation(const glm::vec3& rotation) noexcept
+void TransformComponent::SetRotation(const glm::vec3& rotation) noexcept
 {
-	rotation_ = rotation;
+	Rotation = rotation;
 }
 
-void TransformComponent::setScale(const glm::vec3& scale) noexcept
+void TransformComponent::SetScale(const glm::vec3& scale) noexcept
 {
-	scale_ = scale;
+	Scale = scale;
 }
 
-const glm::vec3& TransformComponent::position() const noexcept
+const glm::vec3& TransformComponent::GetPosition() const noexcept
 {
-	return position_;
+	return Position;
 }
 
-const glm::vec3& TransformComponent::rotation() const noexcept
+const glm::vec3& TransformComponent::GetRotation() const noexcept
 {
-	return rotation_;
+	return Rotation;
 }
 
-const glm::vec3& TransformComponent::scale() const noexcept
+const glm::vec3& TransformComponent::GetScale() const noexcept
 {
-	return scale_;
+	return Scale;
 }
 
-glm::mat4 TransformComponent::modelMatrix() const
+glm::mat4 TransformComponent::ModelMatrix() const
 {
 	glm::mat4 model{1.0f};
-	model = glm::translate(model, position_);
-	model = glm::rotate(model, rotation_.x, glm::vec3(1.0f, 0.0f, 0.0f));
-	model = glm::rotate(model, rotation_.y, glm::vec3(0.0f, 1.0f, 0.0f));
-	model = glm::rotate(model, rotation_.z, glm::vec3(0.0f, 0.0f, 1.0f));
-	return glm::scale(model, scale_);
+	model = glm::translate(model, Position);
+	model = glm::rotate(model, Rotation.x, glm::vec3(1.0f, 0.0f, 0.0f));
+	model = glm::rotate(model, Rotation.y, glm::vec3(0.0f, 1.0f, 0.0f));
+	model = glm::rotate(model, Rotation.z, glm::vec3(0.0f, 0.0f, 1.0f));
+	return glm::scale(model, Scale);
 }

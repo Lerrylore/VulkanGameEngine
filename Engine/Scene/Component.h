@@ -16,27 +16,27 @@ class Component
 
 	virtual ~Component();
 
-	[[nodiscard]] State state() const noexcept;
-	[[nodiscard]] bool isActive() const noexcept;
+	[[nodiscard]] State GetState() const noexcept;
+	[[nodiscard]] bool IsActive() const noexcept;
 
   protected:
 	Component() = default;
 
-	[[nodiscard]] GameObject& owner() noexcept;
-	[[nodiscard]] const GameObject& owner() const noexcept;
+	[[nodiscard]] GameObject& GetOwner() noexcept;
+	[[nodiscard]] const GameObject& GetOwner() const noexcept;
 
-	virtual void onInitialize();
-	virtual void onUpdate(float deltaTime);
-	virtual void onDestroy() noexcept;
+	virtual void OnInitialize();
+	virtual void OnUpdate(float deltaTime);
+	virtual void OnDestroy() noexcept;
 
   private:
 	friend class GameObject;
 
-	void attach(GameObject& owner) noexcept;
-	void initialize();
-	void update(float deltaTime);
-	void destroy() noexcept;
+	void Attach(GameObject& owner) noexcept;
+	void Initialize();
+	void Update(float deltaTime);
+	void Destroy() noexcept;
 
-	GameObject* owner_ = nullptr;
-	State state_ = State::Uninitialized;
+	GameObject* Owner = nullptr;
+	State CurrentState = State::Uninitialized;
 };

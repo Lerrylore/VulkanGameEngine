@@ -7,17 +7,17 @@
 class TransformComponent final : public Component
 {
   public:
-	void setPosition(const glm::vec3& position) noexcept;
-	void setRotation(const glm::vec3& rotation) noexcept;
-	void setScale(const glm::vec3& scale) noexcept;
+	void SetPosition(const glm::vec3& position) noexcept;
+	void SetRotation(const glm::vec3& rotation) noexcept;
+	void SetScale(const glm::vec3& scale) noexcept;
 
-	[[nodiscard]] const glm::vec3& position() const noexcept;
-	[[nodiscard]] const glm::vec3& rotation() const noexcept;
-	[[nodiscard]] const glm::vec3& scale() const noexcept;
-	[[nodiscard]] glm::mat4 modelMatrix() const;
+	[[nodiscard]] const glm::vec3& GetPosition() const noexcept;
+	[[nodiscard]] const glm::vec3& GetRotation() const noexcept;
+	[[nodiscard]] const glm::vec3& GetScale() const noexcept;
+	[[nodiscard]] glm::mat4 ModelMatrix() const;
 
   private:
-	glm::vec3 position_{0.0f};
-	glm::vec3 rotation_{0.0f};
-	glm::vec3 scale_{1.0f};
+	glm::vec3 Position{0.0f};
+	glm::vec3 Rotation{0.0f};
+	glm::vec3 Scale{1.0f};
 };

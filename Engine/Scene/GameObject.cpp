@@ -1,81 +1,81 @@
 #include "GameObject.h"
 #include "TransformComponent.h"
 
-GameObject::GameObject() : transform_(&addComponent<TransformComponent>())
+GameObject::GameObject() : Transform(&AddComponent<TransformComponent>())
 {
 }
 
 GameObject::~GameObject()
 {
-	destroy();
+	Destroy();
 }
 
-TransformComponent& GameObject::transform() noexcept
+TransformComponent& GameObject::GetTransform() noexcept
 {
-	return *transform_;
+	return *Transform;
 }
 
-const TransformComponent& GameObject::transform() const noexcept
+const TransformComponent& GameObject::GetTransform() const noexcept
 {
-	return *transform_;
+	return *Transform;
 }
 
-bool GameObject::isInitialized() const noexcept
+bool GameObject::IsInitialized() const noexcept
 {
-	return initialized_;
+	return bInitialized;
 }
 
-void GameObject::initialize()
+void GameObject::Initialize()
 {
-	if (destroyed_)
+	if (bDestroyed)
 	{
 		throw std::logic_error("Cannot initialize a destroyed GameObject");
 	}
-	if (initialized_)
+	if (bInitialized)
 	{
 		return;
 	}
 
 	try
 	{
-		for (size_t index = 0; index < components_.size(); ++index)
+		for (size_t index = 0; index < Components.size(); ++index)
 		{
-			components_[index]->initialize();
+			Components[index]->Initialize();
 		}
-		initialized_ = true;
+		bInitialized = true;
 	}
 	catch (...)
 	{
-		destroy();
+		Destroy();
 		throw;
 	}
 }
 
-void GameObject::update(float deltaTime)
+void GameObject::Update(float deltaTime)
 {
-	if (!initialized_ || destroyed_)
+	if (!bInitialized || bDestroyed)
 	{
 		return;
 	}
 
-	const size_t componentCount = components_.size();
+	const size_t componentCount = Components.size();
 	for (size_t index = 0; index < componentCount; ++index)
 	{
-		components_[index]->update(deltaTime);
+		Components[index]->Update(deltaTime);
 	}
 }
 
-void GameObject::destroy() noexcept
+void GameObject::Destroy() noexcept
 {
-	if (destroyed_)
+	if (bDestroyed)
 	{
 		return;
 	}
 
-	destroyed_ = true;
-	initialized_ = false;
-	for (auto component = components_.rbegin(); component != components_.rend(); ++component)
+	bDestroyed = true;
+	bInitialized = false;
+	for (auto component = Components.rbegin(); component != Components.rend(); ++component)
 	{
-		(*component)->destroy();
+		(*component)->Destroy();
 	}
 }
