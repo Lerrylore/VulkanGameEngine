@@ -183,6 +183,7 @@ class VulkanGameEngineApplication
 	std::optional<MeshResource> meshResource;
 	std::optional<TextureResource> textureResource;
 	std::optional<TextureResource> normalMapResource;
+	std::optional<TextureResource> metallicRoughnessMapResource;
 	std::optional<MaterialResource> materialResource;
 
 	std::vector<BufferAllocation> particleBuffers;
@@ -218,7 +219,8 @@ class VulkanGameEngineApplication
 		createComputePipeline();
 		createTextureImage();
 		createProceduralNormalMapImage();
-		materialResource.emplace(*textureResource, *normalMapResource);
+		createProceduralMetallicRoughnessMapImage();
+		materialResource.emplace(*textureResource, *normalMapResource, *metallicRoughnessMapResource);
 		loadModel();
 		createGeometryBuffer();
 		createParticleBuffers();
@@ -685,6 +687,60 @@ class VulkanGameEngineApplication
 		endSingleTimeCommands(std::move(commandBuffer));
 	}
 
+	void createProceduralMetallicRoughnessMapImage()
+	{
+		constexpr uint32_t width = 4;
+		constexpr uint32_t height = 4;
+		constexpr vk::Format materialMapFormat = vk::Format::eR8G8B8A8Unorm;
+		// G stores roughness and B stores metallic. R and A are unused.
+		constexpr std::array<uint8_t, width * height * 4> pixels{
+			0, 32, 0, 255, 0, 96, 0, 255, 0, 160, 0, 255, 0, 224, 0, 255,
+			0, 32, 128, 255, 0, 96, 128, 255, 0, 160, 128, 255, 0, 224, 128, 255,
+			0, 32, 255, 255, 0, 96, 255, 255, 0, 160, 255, 255, 0, 224, 255, 255,
+			0, 224, 255, 255, 0, 160, 255, 0, 32, 255, 255, 0, 96, 255, 255};
+
+		metallicRoughnessMapResource.emplace(vulkan, width, height, 1, materialMapFormat);
+		BufferAllocation stagingBuffer{
+			vulkan,
+			sizeof(pixels),
+			vk::BufferUsageFlagBits::eTransferSrc,
+			vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent};
+		void* mapped = stagingBuffer.memory().mapMemory(0, sizeof(pixels));
+		std::memcpy(mapped, pixels.data(), sizeof(pixels));
+		stagingBuffer.memory().unmapMemory();
+
+		vk::raii::CommandBuffer commandBuffer = beginSingleTimeCommands();
+		transitionImageLayout(
+			commandBuffer,
+			metallicRoughnessMapResource->image(),
+			vk::ImageLayout::eUndefined,
+			vk::ImageLayout::eTransferDstOptimal,
+			1);
+		const vk::BufferImageCopy region{
+			.bufferOffset = 0,
+			.bufferRowLength = 0,
+			.bufferImageHeight = 0,
+			.imageSubresource = {
+				.aspectMask = vk::ImageAspectFlagBits::eColor,
+				.mipLevel = 0,
+				.baseArrayLayer = 0,
+				.layerCount = 1},
+			.imageOffset = {0, 0, 0},
+			.imageExtent = {width, height, 1}};
+		commandBuffer.copyBufferToImage(
+			*stagingBuffer.buffer(),
+			*metallicRoughnessMapResource->image(),
+			vk::ImageLayout::eTransferDstOptimal,
+			region);
+		transitionImageLayout(
+			commandBuffer,
+			metallicRoughnessMapResource->image(),
+			vk::ImageLayout::eTransferDstOptimal,
+			vk::ImageLayout::eShaderReadOnlyOptimal,
+			1);
+		endSingleTimeCommands(std::move(commandBuffer));
+	}
+
 	void generateMipmaps(vk::raii::CommandBuffer& commandBuffer,
 		vk::raii::Image& image,
 		vk::Format               imageFormat,
@@ -838,11 +894,12 @@ class VulkanGameEngineApplication
 
 	void createDescriptorSetLayout() 
 	{
-		std::array<vk::DescriptorSetLayoutBinding, 4> bindings{
+		std::array<vk::DescriptorSetLayoutBinding, 5> bindings{
 			{{.binding = 0, .descriptorType = vk::DescriptorType::eUniformBuffer, .descriptorCount = 1, .stageFlags = vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment},
 			 {.binding = 1, .descriptorType = vk::DescriptorType::eCombinedImageSampler, .descriptorCount = 1, .stageFlags = vk::ShaderStageFlagBits::eFragment},
 			 {.binding = 2, .descriptorType = vk::DescriptorType::eCombinedImageSampler, .descriptorCount = 1, .stageFlags = vk::ShaderStageFlagBits::eFragment},
-			 {.binding = 3, .descriptorType = vk::DescriptorType::eCombinedImageSampler, .descriptorCount = 1, .stageFlags = vk::ShaderStageFlagBits::eFragment}} };
+			 {.binding = 3, .descriptorType = vk::DescriptorType::eCombinedImageSampler, .descriptorCount = 1, .stageFlags = vk::ShaderStageFlagBits::eFragment},
+			 {.binding = 4, .descriptorType = vk::DescriptorType::eCombinedImageSampler, .descriptorCount = 1, .stageFlags = vk::ShaderStageFlagBits::eFragment}} };
 
 		vk::DescriptorSetLayoutCreateInfo layoutInfo{ .bindingCount = static_cast<uint32_t>(bindings.size()), .pBindings = bindings.data() };
 
@@ -1088,8 +1145,8 @@ class VulkanGameEngineApplication
 	{
 		assert(meshResource.has_value());
 		assert(materialResource.has_value());
-		materialResource->SetMetallic(0.0f);
-		materialResource->SetRoughness(0.32f);
+		materialResource->SetMetallic(1.0f);
+		materialResource->SetRoughness(1.0f);
 
 		auto& lightObject = scene.CreateGameObject();
 		DirectionalLight = &lightObject.AddComponent<DirectionalLightComponent>();

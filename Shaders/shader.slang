@@ -73,6 +73,7 @@ struct VSOutput
 Sampler2D texture;
 Sampler2D shadowMap;
 Sampler2D normalMap;
+Sampler2D metallicRoughnessMap;
 
 [shader("vertex")]
 VSOutput vertMain(VSInput input) {
@@ -122,8 +123,15 @@ float4 fragMain(VSOutput vertIn) : SV_TARGET {
    }
    float normalLight = max(dot(worldNormal, surfaceToLight), 0.0);
    float normalView = max(dot(worldNormal, surfaceToCamera), 0.0);
-   float metallic = clamp(ubo.materialMetallicRoughness.x, 0.0, 1.0);
-   float roughness = clamp(ubo.materialMetallicRoughness.y, 0.04, 1.0);
+   float4 metallicRoughnessSample = metallicRoughnessMap.Sample(vertIn.fragTexCoord * 1.0);
+   float metallic = clamp(
+       metallicRoughnessSample.b * ubo.materialMetallicRoughness.x,
+       0.0,
+       1.0);
+   float roughness = clamp(
+       metallicRoughnessSample.g * ubo.materialMetallicRoughness.y,
+       0.04,
+       1.0);
    float3 albedo = baseColor.rgb * ubo.materialBaseColorAmbient.rgb;
 
    uint debugView = (uint)ubo.debugView.x;

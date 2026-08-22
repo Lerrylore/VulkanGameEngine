@@ -119,13 +119,13 @@ void MeshRenderer::Build(const Scene& scene)
 	}
 
 	const uint32_t descriptorCount = static_cast<uint32_t>(components.size()) * FrameCount;
-	if (descriptorCount > std::numeric_limits<uint32_t>::max() / 3)
+	if (descriptorCount > std::numeric_limits<uint32_t>::max() / 4)
 	{
 		throw std::overflow_error("MeshRenderer sampled image descriptor count exceeds Vulkan limits");
 	}
 	const std::array<vk::DescriptorPoolSize, 2> poolSizes{{
 		{.type = vk::DescriptorType::eUniformBuffer, .descriptorCount = descriptorCount},
-		{.type = vk::DescriptorType::eCombinedImageSampler, .descriptorCount = descriptorCount * 3}}};
+		{.type = vk::DescriptorType::eCombinedImageSampler, .descriptorCount = descriptorCount * 4}}};
 	const vk::DescriptorPoolCreateInfo poolInfo{
 		.flags = vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet,
 		.maxSets = descriptorCount,
@@ -166,6 +166,7 @@ void MeshRenderer::Build(const Scene& scene)
 
 			const auto& baseColorTexture = component->GetMaterial().GetBaseColorTexture();
 			const auto& normalTexture = component->GetMaterial().GetNormalTexture();
+			const auto& metallicRoughnessTexture = component->GetMaterial().GetMetallicRoughnessTexture();
 			for (uint32_t frameIndex = 0; frameIndex < FrameCount; ++frameIndex)
 			{
 				const vk::DescriptorBufferInfo bufferInfo{
@@ -184,7 +185,11 @@ void MeshRenderer::Build(const Scene& scene)
 					.sampler = *normalTexture.sampler(),
 					.imageView = *normalTexture.imageView(),
 					.imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal};
-				const std::array<vk::WriteDescriptorSet, 4> writes{{
+				const vk::DescriptorImageInfo metallicRoughnessMapInfo{
+					.sampler = *metallicRoughnessTexture.sampler(),
+					.imageView = *metallicRoughnessTexture.imageView(),
+					.imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal};
+				const std::array<vk::WriteDescriptorSet, 5> writes{{
 					{.dstSet = drawResources.DescriptorSets[frameIndex],
 					 .dstBinding = 0,
 					 .descriptorCount = 1,
@@ -204,7 +209,12 @@ void MeshRenderer::Build(const Scene& scene)
 						 .dstBinding = 3,
 						 .descriptorCount = 1,
 						 .descriptorType = vk::DescriptorType::eCombinedImageSampler,
-						 .pImageInfo = &normalMapInfo}}};
+						 .pImageInfo = &normalMapInfo},
+					{.dstSet = drawResources.DescriptorSets[frameIndex],
+						 .dstBinding = 4,
+						 .descriptorCount = 1,
+						 .descriptorType = vk::DescriptorType::eCombinedImageSampler,
+						 .pImageInfo = &metallicRoughnessMapInfo}}};
 				Vulkan.device().updateDescriptorSets(writes, {});
 			}
 		}

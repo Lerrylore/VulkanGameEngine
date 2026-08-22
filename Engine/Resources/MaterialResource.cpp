@@ -4,8 +4,13 @@
 
 #include <stdexcept>
 
-MaterialResource::MaterialResource(TextureResource& baseColorTexture, TextureResource& normalTexture) noexcept
-	: BaseColorTexture(baseColorTexture), NormalTexture(normalTexture)
+MaterialResource::MaterialResource(
+	TextureResource& baseColorTexture,
+	TextureResource& normalTexture,
+	TextureResource& metallicRoughnessTexture) noexcept
+	: BaseColorTexture(baseColorTexture),
+	  NormalTexture(normalTexture),
+	  MetallicRoughnessTexture(metallicRoughnessTexture)
 {
 }
 
@@ -27,6 +32,16 @@ TextureResource& MaterialResource::GetNormalTexture() noexcept
 const TextureResource& MaterialResource::GetNormalTexture() const noexcept
 {
 	return NormalTexture;
+}
+
+TextureResource& MaterialResource::GetMetallicRoughnessTexture() noexcept
+{
+	return MetallicRoughnessTexture;
+}
+
+const TextureResource& MaterialResource::GetMetallicRoughnessTexture() const noexcept
+{
+	return MetallicRoughnessTexture;
 }
 
 const glm::vec4& MaterialResource::GetBaseColor() const noexcept

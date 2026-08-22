@@ -7,7 +7,10 @@ class TextureResource;
 class MaterialResource final
 {
   public:
-	MaterialResource(TextureResource& baseColorTexture, TextureResource& normalTexture) noexcept;
+	MaterialResource(
+		TextureResource& baseColorTexture,
+		TextureResource& normalTexture,
+		TextureResource& metallicRoughnessTexture) noexcept;
 
 	MaterialResource(const MaterialResource&) = delete;
 	MaterialResource& operator=(const MaterialResource&) = delete;
@@ -18,6 +21,8 @@ class MaterialResource final
 	[[nodiscard]] const TextureResource& GetBaseColorTexture() const noexcept;
 	[[nodiscard]] TextureResource& GetNormalTexture() noexcept;
 	[[nodiscard]] const TextureResource& GetNormalTexture() const noexcept;
+	[[nodiscard]] TextureResource& GetMetallicRoughnessTexture() noexcept;
+	[[nodiscard]] const TextureResource& GetMetallicRoughnessTexture() const noexcept;
 	[[nodiscard]] const glm::vec4& GetBaseColor() const noexcept;
 	void SetBaseColor(const glm::vec4& baseColor) noexcept;
 	[[nodiscard]] float GetMetallic() const noexcept;
@@ -29,6 +34,7 @@ class MaterialResource final
 	// The texture owner must outlive every material that references it.
 	TextureResource& BaseColorTexture;
 	TextureResource& NormalTexture;
+	TextureResource& MetallicRoughnessTexture;
 	glm::vec4 BaseColor{1.0f};
 	float Metallic = 0.0f;
 	float Roughness = 0.5f;
