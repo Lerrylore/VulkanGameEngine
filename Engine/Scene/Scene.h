@@ -17,7 +17,14 @@ class Scene final
 	Scene& operator=(Scene&&) = delete;
 
 	GameObject& createGameObject();
+	[[nodiscard]] bool isInitialized() const noexcept;
+
+	void initialize();
+	void update(float deltaTime);
+	void destroy() noexcept;
 
   private:
 	std::vector<std::unique_ptr<GameObject>> gameObjects_;
+	bool initialized_ = false;
+	bool destroyed_ = false;
 };

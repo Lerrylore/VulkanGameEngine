@@ -215,17 +215,24 @@ class VulkanGameEngineApplication
 		createDescriptorSets();
 		createComputeDescriptorPool();
 		createComputeDescriptorSets();
+		scene.initialize();
 	}
 
 	void mainLoop()
 	{
+		auto lastSceneUpdate = std::chrono::steady_clock::now();
 		while (!window.shouldClose())
 		{
 			window.pollEvents();
+			const auto now = std::chrono::steady_clock::now();
+			const float deltaTime = std::chrono::duration<float>(now - lastSceneUpdate).count();
+			lastSceneUpdate = now;
+			scene.update(deltaTime);
 			drawFrame();
 		}
 
 		device.waitIdle();
+		scene.destroy();
 	}
 
 	void recreateSwapChain()
