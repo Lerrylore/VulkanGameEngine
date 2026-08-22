@@ -76,10 +76,22 @@
     <ClCompile Include="Engine\Renderer\ForwardRenderer.cpp">
       <Filter>Engine\Renderer</Filter>
     </ClCompile>
+    <ClCompile Include="Engine\Renderer\GBufferResources.cpp">
+      <Filter>Engine\Renderer</Filter>
+    </ClCompile>
     <ClCompile Include="Engine\Renderer\MeshRenderer.cpp">
       <Filter>Engine\Renderer</Filter>
     </ClCompile>
     <ClCompile Include="Engine\Renderer\ParticleSystem.cpp">
+      <Filter>Engine\Renderer</Filter>
+    </ClCompile>
+    <ClCompile Include="Engine\Renderer\RenderGraph.cpp">
+      <Filter>Engine\Renderer</Filter>
+    </ClCompile>
+    <ClCompile Include="Engine\Renderer\RenderGraphExecutor.cpp">
+      <Filter>Engine\Renderer</Filter>
+    </ClCompile>
+    <ClCompile Include="Engine\Renderer\RenderGraphSelfTest.cpp">
       <Filter>Engine\Renderer</Filter>
     </ClCompile>
     <ClCompile Include="Engine\Resources\ImageAllocation.cpp">
@@ -192,10 +204,22 @@
     <ClInclude Include="Engine\Renderer\ForwardRenderer.h">
       <Filter>Engine\Renderer</Filter>
     </ClInclude>
+    <ClInclude Include="Engine\Renderer\GBufferResources.h">
+      <Filter>Engine\Renderer</Filter>
+    </ClInclude>
     <ClInclude Include="Engine\Renderer\MeshRenderer.h">
       <Filter>Engine\Renderer</Filter>
     </ClInclude>
     <ClInclude Include="Engine\Renderer\ParticleSystem.h">
+      <Filter>Engine\Renderer</Filter>
+    </ClInclude>
+    <ClInclude Include="Engine\Renderer\RenderGraph.h">
+      <Filter>Engine\Renderer</Filter>
+    </ClInclude>
+    <ClInclude Include="Engine\Renderer\RenderGraphExecutor.h">
+      <Filter>Engine\Renderer</Filter>
+    </ClInclude>
+    <ClInclude Include="Engine\Renderer\RenderGraphSelfTest.h">
       <Filter>Engine\Renderer</Filter>
     </ClInclude>
     <ClInclude Include="Engine\Resources\ImageAllocation.h">
@@ -286,6 +310,8 @@
   <ItemGroup>
     <None Include="main.cpp" />
     <None Include="Shaders\compute.slang" />
+    <None Include="Shaders\gbuffer.slang" />
+    <None Include="Shaders\deferred_lighting.slang" />
     <None Include="Shaders\particles.slang" />
   </ItemGroup>
   <ItemGroup>

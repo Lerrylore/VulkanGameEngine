@@ -21,7 +21,8 @@ enum class WindowKey
 	F2,
 	F3,
 	F4,
-	F5
+	F5,
+	F6
 };
 
 class Window final

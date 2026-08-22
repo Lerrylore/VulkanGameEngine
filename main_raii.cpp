@@ -3,6 +3,8 @@
 #include <array>
 #include <cstdlib>
 #include <cstring>
+#include <filesystem>
+#include <fstream>
 #include <functional>
 #include <iostream>
 #include <limits>
@@ -27,8 +29,12 @@
 #include "Engine/Platform/Window.h"
 #include "Engine/Renderer/FrameResources.h"
 #include "Engine/Renderer/ForwardRenderer.h"
+#include "Engine/Renderer/GBufferResources.h"
 #include "Engine/Renderer/MeshRenderer.h"
 #include "Engine/Renderer/ParticleSystem.h"
+#include "Engine/Renderer/RenderGraph.h"
+#include "Engine/Renderer/RenderGraphExecutor.h"
+#include "Engine/Renderer/RenderGraphSelfTest.h"
 #include "Engine/Renderer/RenderTargetResources.h"
 #include "Engine/Renderer/ShadowMapResources.h"
 #include "Engine/Renderer/SwapchainResources.h"
@@ -112,6 +118,20 @@ struct VertexHash
 	}
 };
 
+struct alignas(16) DeferredLightingUniformBufferObject
+{
+	glm::mat4 ShadowViewProjection;
+	glm::vec4 LightDirection;
+	glm::vec4 LightColorIntensity;
+	glm::vec4 CameraPosition;
+	glm::vec4 MaterialBaseColorAmbient;
+	glm::vec4 MaterialMetallicRoughness;
+	glm::vec4 MaterialOcclusion;
+	glm::vec4 MaterialEmissive;
+	glm::vec4 DebugView;
+	glm::vec4 ShadowMapParameters;
+};
+
 class VulkanGameEngineApplication
 {
   public:
@@ -144,6 +164,8 @@ class VulkanGameEngineApplication
 	ResourceHandle<ShaderResource>   MainShader;
 	ResourceHandle<ShaderResource>   ParticleShader;
 	ResourceHandle<ShaderResource>   ComputeShader;
+	ResourceHandle<ShaderResource>   GBufferShader;
+	ResourceHandle<ShaderResource>   DeferredLightingShader;
 	ResourceHandle<BinaryResource>   AsyncShaderBinary;
 	std::mutex                       AsyncResultMutex;
 	bool                             AsyncShaderCompleted = false;
@@ -156,6 +178,7 @@ class VulkanGameEngineApplication
 	const vk::Extent2D&              swapChainExtent = swapchainResources.extent();
 	const std::vector<vk::raii::ImageView>& swapChainImageViews = swapchainResources.imageViews();
 	RenderTargetResources            renderTargets{vulkan, swapchainResources};
+	std::optional<GBufferResources>  gBufferResources;
 	ShadowMapResources               shadowMapResources{vulkan, ApplicationConfig::MaxFramesInFlight};
 	vk::raii::Image&                 depthImage = renderTargets.depthImage();
 	vk::raii::ImageView&             depthImageView = renderTargets.depthImageView();
@@ -167,6 +190,15 @@ class VulkanGameEngineApplication
 	vk::raii::Pipeline       graphicsPipeline = nullptr;
 	vk::raii::PipelineLayout shadowPipelineLayout = nullptr;
 	vk::raii::Pipeline       shadowGraphicsPipeline = nullptr;
+	vk::raii::PipelineLayout gBufferPipelineLayout = nullptr;
+	vk::raii::Pipeline       gBufferPipeline = nullptr;
+	vk::raii::DescriptorSetLayout deferredDescriptorSetLayout = nullptr;
+	vk::raii::PipelineLayout deferredPipelineLayout = nullptr;
+	vk::raii::Pipeline       deferredLightingPipeline = nullptr;
+	vk::raii::DescriptorPool deferredDescriptorPool = nullptr;
+	std::vector<vk::raii::DescriptorSet> deferredDescriptorSets;
+	std::vector<BufferAllocation> deferredUniformBuffers;
+	std::vector<void*> deferredUniformBuffersMapped;
 	std::unordered_map<std::string, std::function<void()>> ResourceReloadCallbacks;
 
 	ResourceHandle<MeshResource> meshResource;
@@ -181,6 +213,9 @@ class VulkanGameEngineApplication
 	CameraComponent* ActiveCamera = nullptr;
 	DirectionalLightComponent* DirectionalLight = nullptr;
 	DebugViewMode CurrentDebugView = DebugViewMode::Lit;
+	enum class RenderPathMode { Forward, Deferred };
+	RenderPathMode CurrentRenderPath = RenderPathMode::Forward;
+	bool RenderPathToggleWasDown = false;
 	// Declared after Scene and its resources so it is destroyed before them.
 	std::optional<MeshRenderer> MeshRendererInstance;
 
@@ -192,6 +227,8 @@ class VulkanGameEngineApplication
 	const vk::SampleCountFlagBits msaaSamples = vulkan.msaaSamples();
 	std::vector<std::byte> StreamedShaderBinary;
 	bool StreamingCompleted = false;
+	bool ForwardGraphDumpWritten = false;
+	bool DeferredGraphDumpWritten = false;
 
 	std::vector<Vertex>    vertices;
 	std::vector<uint32_t>  indices;
@@ -208,11 +245,46 @@ class VulkanGameEngineApplication
 			throw std::runtime_error("resource manager self-test failed");
 		}
 		std::clog << "[ResourceManagerSelfTest] passed\n";
+		const auto renderGraphTest = RenderGraphSelfTest::Run();
+		if (!renderGraphTest.Passed)
+		{
+			for (const auto& failure : renderGraphTest.Failures)
+			{
+				std::clog << "[RenderGraphSelfTest] " << failure << '\n';
+			}
+			throw std::runtime_error("render graph self-test failed");
+		}
+		std::clog << "[RenderGraphSelfTest] passed\n";
+
+		RenderGraph graphPreview;
+		const auto shadowPreview = graphPreview.CreateImage(
+			"ShadowMap", {{2048, 2048}, RenderGraph::ImageFormat::D32Sfloat, 1, 1, 1, true, false});
+		const auto scenePreview = graphPreview.CreateImage(
+			"SceneColor", {{ApplicationConfig::WindowWidth, ApplicationConfig::WindowHeight}, RenderGraph::ImageFormat::R8G8B8A8Unorm, 1, 1, 1, true, false});
+		const auto swapchainPreview = graphPreview.CreateImage(
+			"Swapchain", {{ApplicationConfig::WindowWidth, ApplicationConfig::WindowHeight}, RenderGraph::ImageFormat::R8G8B8A8Unorm, 1, 1, 1, true, false});
+		const auto previewShadowPass = graphPreview.AddPass("ShadowPass");
+		graphPreview.Write(previewShadowPass, shadowPreview, RenderGraph::ImageUsage::DepthAttachment);
+		const auto previewForwardPass = graphPreview.AddPass("ForwardOpaquePass");
+		graphPreview.Read(previewForwardPass, shadowPreview, RenderGraph::ImageUsage::Sampled);
+		graphPreview.Write(previewForwardPass, scenePreview, RenderGraph::ImageUsage::ColorAttachment);
+		graphPreview.Write(previewForwardPass, swapchainPreview, RenderGraph::ImageUsage::ColorAttachment);
+		const auto previewParticlePass = graphPreview.AddPass("ParticleOverlayPass");
+		graphPreview.ReadWrite(previewParticlePass, swapchainPreview, RenderGraph::ImageUsage::ColorAttachment);
+		const auto previewCompilation = graphPreview.Compile();
+		std::clog << graphPreview.DumpText(previewCompilation);
+		std::clog << graphPreview.DumpDot(previewCompilation);
 
 		loadShaderResources();
+		gBufferResources.emplace(
+			vulkan,
+			swapchainResources,
+			ApplicationConfig::MaxFramesInFlight);
 		createDescriptorSetLayout();
 		createGraphicsPipeline();
 		createShadowGraphicsPipeline();
+		createGBufferPipeline();
+		createDeferredLightingResources();
 		textureResource = createTextureImage(
 			"viking_room_base_color",
 			std::string(ApplicationConfig::BaseColorTexturePath),
@@ -259,6 +331,12 @@ class VulkanGameEngineApplication
 				.InitialAspectRatio = static_cast<float>(ApplicationConfig::WindowHeight) /
 					static_cast<float>(ApplicationConfig::WindowWidth)});
 		ParticleSystemInstance->Initialize(ParticleShader->module(), ComputeShader->module());
+		// Particles are an explicit single-sample overlay pass in both paths.
+		ParticleSystemInstance->RebuildGraphicsPipeline(
+			ParticleShader->module(),
+			swapChainSurfaceFormat.format,
+			vk::Format::eUndefined,
+			vk::SampleCountFlagBits::e1);
 		ForwardRendererInstance.emplace(
 			swapchainResources,
 			renderTargets,
@@ -268,6 +346,7 @@ class VulkanGameEngineApplication
 		startAsyncResourceLoad();
 		startStreamingResourceLoad();
 		DebugViewController::PrintHelp();
+		std::clog << "[RenderPath] F6 toggles Forward/Deferred\n";
 	}
 
 	void loadShaderResources()
@@ -284,8 +363,16 @@ class VulkanGameEngineApplication
 			"compute",
 			vulkan,
 			"Shaders/compute.spv");
+		GBufferShader = Resources.Load<ShaderResource>(
+			"gbuffer",
+			vulkan,
+			"Shaders/gbuffer.spv");
+		DeferredLightingShader = Resources.Load<ShaderResource>(
+			"deferred_lighting",
+			vulkan,
+			"Shaders/deferred_lighting.spv");
 
-		if (!MainShader || !ParticleShader || !ComputeShader)
+		if (!MainShader || !ParticleShader || !ComputeShader || !GBufferShader || !DeferredLightingShader)
 		{
 			throw std::runtime_error("failed to load one or more shader resources");
 		}
@@ -295,6 +382,8 @@ class VulkanGameEngineApplication
 			HotReload.Watch(MainShader, "Shaders/slang.spv");
 			HotReload.Watch(ParticleShader, "Shaders/particles.spv");
 			HotReload.Watch(ComputeShader, "Shaders/compute.spv");
+			HotReload.Watch(GBufferShader, "Shaders/gbuffer.spv");
+			HotReload.Watch(DeferredLightingShader, "Shaders/deferred_lighting.spv");
 
 			ResourceReloadCallbacks.emplace("slang", [this]()
 			{
@@ -306,12 +395,20 @@ class VulkanGameEngineApplication
 				ParticleSystemInstance->RebuildGraphicsPipeline(
 					ParticleShader->module(),
 					swapChainSurfaceFormat.format,
-					renderTargets.depthFormat(),
-					msaaSamples);
+					vk::Format::eUndefined,
+					vk::SampleCountFlagBits::e1);
 			});
 			ResourceReloadCallbacks.emplace("compute", [this]()
 			{
 				ParticleSystemInstance->RebuildComputePipeline(ComputeShader->module());
+			});
+			ResourceReloadCallbacks.emplace("gbuffer", [this]()
+			{
+				createGBufferPipeline();
+			});
+			ResourceReloadCallbacks.emplace("deferred_lighting", [this]()
+			{
+				createDeferredLightingPipeline();
 			});
 		}
 	}
@@ -387,6 +484,18 @@ class VulkanGameEngineApplication
 		Loop.Run([this](float deltaTime)
 		{
 			DebugViewController::Update(window, CurrentDebugView);
+			const bool renderPathToggleDown = window.IsKeyDown(WindowKey::F6);
+			if (renderPathToggleDown && !RenderPathToggleWasDown)
+			{
+				device.waitIdle();
+				CurrentRenderPath = CurrentRenderPath == RenderPathMode::Forward
+					? RenderPathMode::Deferred
+					: RenderPathMode::Forward;
+				std::clog << "[RenderPath] switched to "
+					<< (CurrentRenderPath == RenderPathMode::Forward ? "Forward" : "Deferred")
+					<< "\n";
+			}
+			RenderPathToggleWasDown = renderPathToggleDown;
 			Streaming.Process(1);
 			{
 				std::lock_guard lock(AsyncResultMutex);
@@ -443,16 +552,52 @@ class VulkanGameEngineApplication
 			static_cast<float>(swapChainExtent.width) /
 			static_cast<float>(swapChainExtent.height));
 		renderTargets.recreate();
+		gBufferResources->Recreate();
+		createDeferredLightingDescriptorSets();
 		frameResources.recreateSwapchainImages(swapChainImages.size());
 		if (formatChanged)
 		{
 			createGraphicsPipeline();
+			createGBufferPipeline();
+			createDeferredLightingPipeline();
 			ParticleSystemInstance->RebuildGraphicsPipeline(
 				ParticleShader->module(),
 				swapChainSurfaceFormat.format,
-				renderTargets.depthFormat(),
-				msaaSamples);
+				vk::Format::eUndefined,
+				vk::SampleCountFlagBits::e1);
 		}
+		ForwardGraphDumpWritten = false;
+		DeferredGraphDumpWritten = false;
+	}
+
+	bool WriteRenderGraphDump(
+		const RenderGraph& graph,
+		const RenderGraph::CompilationResult& compilation,
+		const std::string& name)
+	{
+		const std::filesystem::path outputDirectory = "RenderGraphDumps";
+		std::error_code error;
+		std::filesystem::create_directories(outputDirectory, error);
+		if (error)
+		{
+			std::clog << "[RenderGraph] unable to create dump directory: "
+				<< error.message() << '\n';
+			return false;
+		}
+
+		std::ofstream dotFile(outputDirectory / (name + ".dot"), std::ios::trunc);
+		std::ofstream textFile(outputDirectory / (name + ".txt"), std::ios::trunc);
+		if (!dotFile || !textFile)
+		{
+			std::clog << "[RenderGraph] unable to write dump '" << name << "'\n";
+			return false;
+		}
+
+		dotFile << graph.DumpDot(compilation);
+		textFile << graph.DumpText(compilation);
+		std::clog << "[RenderGraph] wrote RenderGraphDumps/" << name
+			<< ".dot and .txt\n";
+		return true;
 	}
 
 	void createGraphicsPipeline()
@@ -583,6 +728,187 @@ class VulkanGameEngineApplication
 			device,
 			nullptr,
 			pipelineChain.get<vk::GraphicsPipelineCreateInfo>());
+	}
+
+	void createGBufferPipeline()
+	{
+		std::array shaderStages{
+			vk::PipelineShaderStageCreateInfo{
+				.stage = vk::ShaderStageFlagBits::eVertex,
+				.module = GBufferShader->module(),
+				.pName = "gbufferVertMain"},
+			vk::PipelineShaderStageCreateInfo{
+				.stage = vk::ShaderStageFlagBits::eFragment,
+				.module = GBufferShader->module(),
+				.pName = "gbufferFragMain"}};
+		auto bindingDescription = Vertex::GetBindingDescription();
+		auto attributeDescriptions = Vertex::GetAttributeDescriptions();
+		vk::PipelineVertexInputStateCreateInfo vertexInputInfo{
+			.vertexBindingDescriptionCount = 1,
+			.pVertexBindingDescriptions = &bindingDescription,
+			.vertexAttributeDescriptionCount = static_cast<uint32_t>(attributeDescriptions.size()),
+			.pVertexAttributeDescriptions = attributeDescriptions.data()};
+		vk::PipelineInputAssemblyStateCreateInfo inputAssembly{.topology = vk::PrimitiveTopology::eTriangleList};
+		vk::PipelineViewportStateCreateInfo viewportState{.viewportCount = 1, .scissorCount = 1};
+		vk::PipelineRasterizationStateCreateInfo rasterizer{
+			.depthClampEnable = vk::False,
+			.rasterizerDiscardEnable = vk::False,
+			.polygonMode = vk::PolygonMode::eFill,
+			.cullMode = vk::CullModeFlagBits::eBack,
+			.frontFace = vk::FrontFace::eCounterClockwise,
+			.lineWidth = 1.0f};
+		vk::PipelineMultisampleStateCreateInfo multisampling{
+			.rasterizationSamples = vk::SampleCountFlagBits::e1};
+		std::array<vk::PipelineColorBlendAttachmentState, GBufferResources::AttachmentCount> blendAttachments{};
+		for (auto& attachment : blendAttachments)
+		{
+			attachment.blendEnable = vk::False;
+			attachment.colorWriteMask = vk::ColorComponentFlagBits::eR |
+				vk::ColorComponentFlagBits::eG |
+				vk::ColorComponentFlagBits::eB |
+				vk::ColorComponentFlagBits::eA;
+		}
+		vk::PipelineColorBlendStateCreateInfo colorBlending{
+			.attachmentCount = static_cast<uint32_t>(blendAttachments.size()),
+			.pAttachments = blendAttachments.data()};
+		vk::PipelineDepthStencilStateCreateInfo depthStencil{
+			.depthTestEnable = vk::True,
+			.depthWriteEnable = vk::True,
+			.depthCompareOp = vk::CompareOp::eLess};
+		std::array dynamicStates{vk::DynamicState::eViewport, vk::DynamicState::eScissor};
+		vk::PipelineDynamicStateCreateInfo dynamicState{
+			.dynamicStateCount = static_cast<uint32_t>(dynamicStates.size()),
+			.pDynamicStates = dynamicStates.data()};
+		vk::PipelineLayoutCreateInfo layoutInfo{
+			.setLayoutCount = 1,
+			.pSetLayouts = &*descriptorSetLayout};
+		gBufferPipelineLayout = vk::raii::PipelineLayout(device, layoutInfo);
+		std::array colorFormats{
+			gBufferResources->ColorFormat(0),
+			gBufferResources->ColorFormat(1),
+			gBufferResources->ColorFormat(2),
+			gBufferResources->ColorFormat(3)};
+		vk::StructureChain<vk::GraphicsPipelineCreateInfo, vk::PipelineRenderingCreateInfo> pipelineChain{
+			{.stageCount = static_cast<uint32_t>(shaderStages.size()),
+			 .pStages = shaderStages.data(),
+			 .pVertexInputState = &vertexInputInfo,
+			 .pInputAssemblyState = &inputAssembly,
+			 .pViewportState = &viewportState,
+			 .pRasterizationState = &rasterizer,
+			 .pMultisampleState = &multisampling,
+			 .pDepthStencilState = &depthStencil,
+			 .pColorBlendState = &colorBlending,
+			 .pDynamicState = &dynamicState,
+			 .layout = gBufferPipelineLayout,
+			 .renderPass = nullptr},
+			{.colorAttachmentCount = static_cast<uint32_t>(colorFormats.size()),
+			 .pColorAttachmentFormats = colorFormats.data(),
+			 .depthAttachmentFormat = gBufferResources->DepthFormat()}};
+		gBufferPipeline = vk::raii::Pipeline(
+			device,
+			nullptr,
+			pipelineChain.get<vk::GraphicsPipelineCreateInfo>());
+	}
+
+	void createDeferredLightingResources()
+	{
+		std::array<vk::DescriptorSetLayoutBinding, 6> bindings{{
+			{.binding = 0, .descriptorType = vk::DescriptorType::eUniformBuffer, .descriptorCount = 1, .stageFlags = vk::ShaderStageFlagBits::eFragment},
+			{.binding = 1, .descriptorType = vk::DescriptorType::eCombinedImageSampler, .descriptorCount = 1, .stageFlags = vk::ShaderStageFlagBits::eFragment},
+			{.binding = 2, .descriptorType = vk::DescriptorType::eCombinedImageSampler, .descriptorCount = 1, .stageFlags = vk::ShaderStageFlagBits::eFragment},
+			{.binding = 3, .descriptorType = vk::DescriptorType::eCombinedImageSampler, .descriptorCount = 1, .stageFlags = vk::ShaderStageFlagBits::eFragment},
+			{.binding = 4, .descriptorType = vk::DescriptorType::eCombinedImageSampler, .descriptorCount = 1, .stageFlags = vk::ShaderStageFlagBits::eFragment},
+			{.binding = 5, .descriptorType = vk::DescriptorType::eCombinedImageSampler, .descriptorCount = 1, .stageFlags = vk::ShaderStageFlagBits::eFragment}}};
+		deferredDescriptorSetLayout = vk::raii::DescriptorSetLayout(
+			device,
+			vk::DescriptorSetLayoutCreateInfo{
+				.bindingCount = static_cast<uint32_t>(bindings.size()),
+				.pBindings = bindings.data()});
+		deferredPipelineLayout = vk::raii::PipelineLayout(
+			device,
+			vk::PipelineLayoutCreateInfo{
+				.setLayoutCount = 1,
+				.pSetLayouts = &*deferredDescriptorSetLayout});
+		deferredUniformBuffers.reserve(ApplicationConfig::MaxFramesInFlight);
+		deferredUniformBuffersMapped.reserve(ApplicationConfig::MaxFramesInFlight);
+		for (uint32_t frameIndex = 0; frameIndex < ApplicationConfig::MaxFramesInFlight; ++frameIndex)
+		{
+			deferredUniformBuffers.emplace_back(
+				vulkan,
+				sizeof(DeferredLightingUniformBufferObject),
+				vk::BufferUsageFlagBits::eUniformBuffer,
+				vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent);
+			deferredUniformBuffersMapped.push_back(deferredUniformBuffers.back().memory().mapMemory(
+				0,
+				sizeof(DeferredLightingUniformBufferObject)));
+		}
+		createDeferredLightingDescriptorSets();
+		createDeferredLightingPipeline();
+	}
+
+	void createDeferredLightingDescriptorSets()
+	{
+		deferredDescriptorSets.clear();
+		deferredDescriptorPool = nullptr;
+		const std::array<vk::DescriptorPoolSize, 2> poolSizes{{
+			{.type = vk::DescriptorType::eUniformBuffer, .descriptorCount = ApplicationConfig::MaxFramesInFlight},
+			{.type = vk::DescriptorType::eCombinedImageSampler, .descriptorCount = ApplicationConfig::MaxFramesInFlight * 5}}};
+		deferredDescriptorPool = vk::raii::DescriptorPool(
+			device,
+			vk::DescriptorPoolCreateInfo{
+				.flags = vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet,
+				.maxSets = ApplicationConfig::MaxFramesInFlight,
+				.poolSizeCount = static_cast<uint32_t>(poolSizes.size()),
+				.pPoolSizes = poolSizes.data()});
+		std::vector<vk::DescriptorSetLayout> layouts(
+			ApplicationConfig::MaxFramesInFlight,
+			*deferredDescriptorSetLayout);
+		deferredDescriptorSets = device.allocateDescriptorSets(vk::DescriptorSetAllocateInfo{
+			.descriptorPool = deferredDescriptorPool,
+			.descriptorSetCount = static_cast<uint32_t>(layouts.size()),
+			.pSetLayouts = layouts.data()});
+		for (uint32_t frameIndex = 0; frameIndex < ApplicationConfig::MaxFramesInFlight; ++frameIndex)
+		{
+			const vk::DescriptorBufferInfo uniformInfo{
+				.buffer = *deferredUniformBuffers[frameIndex].buffer(),
+				.offset = 0,
+				.range = sizeof(DeferredLightingUniformBufferObject)};
+			std::array<vk::DescriptorImageInfo, 5> images{{
+				{.sampler = *shadowMapResources.GetSampler(frameIndex), .imageView = gBufferResources->ColorView(frameIndex, 0), .imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal},
+				{.sampler = *shadowMapResources.GetSampler(frameIndex), .imageView = gBufferResources->ColorView(frameIndex, 1), .imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal},
+				{.sampler = *shadowMapResources.GetSampler(frameIndex), .imageView = gBufferResources->ColorView(frameIndex, 2), .imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal},
+				{.sampler = *shadowMapResources.GetSampler(frameIndex), .imageView = gBufferResources->ColorView(frameIndex, 3), .imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal},
+				{.sampler = *shadowMapResources.GetSampler(frameIndex), .imageView = shadowMapResources.GetImageView(frameIndex), .imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal}}};
+			std::array<vk::WriteDescriptorSet, 6> writes{{
+				{.dstSet = deferredDescriptorSets[frameIndex], .dstBinding = 0, .descriptorCount = 1, .descriptorType = vk::DescriptorType::eUniformBuffer, .pBufferInfo = &uniformInfo},
+				{.dstSet = deferredDescriptorSets[frameIndex], .dstBinding = 1, .descriptorCount = 1, .descriptorType = vk::DescriptorType::eCombinedImageSampler, .pImageInfo = &images[0]},
+				{.dstSet = deferredDescriptorSets[frameIndex], .dstBinding = 2, .descriptorCount = 1, .descriptorType = vk::DescriptorType::eCombinedImageSampler, .pImageInfo = &images[1]},
+				{.dstSet = deferredDescriptorSets[frameIndex], .dstBinding = 3, .descriptorCount = 1, .descriptorType = vk::DescriptorType::eCombinedImageSampler, .pImageInfo = &images[2]},
+				{.dstSet = deferredDescriptorSets[frameIndex], .dstBinding = 4, .descriptorCount = 1, .descriptorType = vk::DescriptorType::eCombinedImageSampler, .pImageInfo = &images[3]},
+				{.dstSet = deferredDescriptorSets[frameIndex], .dstBinding = 5, .descriptorCount = 1, .descriptorType = vk::DescriptorType::eCombinedImageSampler, .pImageInfo = &images[4]}}};
+			device.updateDescriptorSets(writes, {});
+		}
+	}
+
+	void createDeferredLightingPipeline()
+	{
+		std::array shaderStages{
+			vk::PipelineShaderStageCreateInfo{.stage = vk::ShaderStageFlagBits::eVertex, .module = DeferredLightingShader->module(), .pName = "deferredVertMain"},
+			vk::PipelineShaderStageCreateInfo{.stage = vk::ShaderStageFlagBits::eFragment, .module = DeferredLightingShader->module(), .pName = "deferredFragMain"}};
+		vk::PipelineInputAssemblyStateCreateInfo inputAssembly{.topology = vk::PrimitiveTopology::eTriangleList};
+		vk::PipelineViewportStateCreateInfo viewportState{.viewportCount = 1, .scissorCount = 1};
+		vk::PipelineRasterizationStateCreateInfo rasterizer{.polygonMode = vk::PolygonMode::eFill, .cullMode = vk::CullModeFlagBits::eNone, .frontFace = vk::FrontFace::eCounterClockwise, .lineWidth = 1.0f};
+		vk::PipelineMultisampleStateCreateInfo multisampling{.rasterizationSamples = vk::SampleCountFlagBits::e1};
+		vk::PipelineColorBlendAttachmentState blendAttachment{.blendEnable = vk::False, .colorWriteMask = vk::ColorComponentFlagBits::eR | vk::ColorComponentFlagBits::eG | vk::ColorComponentFlagBits::eB | vk::ColorComponentFlagBits::eA};
+		vk::PipelineColorBlendStateCreateInfo colorBlending{.attachmentCount = 1, .pAttachments = &blendAttachment};
+		vk::PipelineDepthStencilStateCreateInfo depthStencil{.depthTestEnable = vk::False, .depthWriteEnable = vk::False, .depthCompareOp = vk::CompareOp::eAlways};
+		std::array dynamicStates{vk::DynamicState::eViewport, vk::DynamicState::eScissor};
+		vk::PipelineDynamicStateCreateInfo dynamicState{.dynamicStateCount = static_cast<uint32_t>(dynamicStates.size()), .pDynamicStates = dynamicStates.data()};
+		vk::PipelineVertexInputStateCreateInfo vertexInputInfo{};
+		vk::StructureChain<vk::GraphicsPipelineCreateInfo, vk::PipelineRenderingCreateInfo> pipelineChain{
+			{.stageCount = static_cast<uint32_t>(shaderStages.size()), .pStages = shaderStages.data(), .pVertexInputState = &vertexInputInfo, .pInputAssemblyState = &inputAssembly, .pViewportState = &viewportState, .pRasterizationState = &rasterizer, .pMultisampleState = &multisampling, .pDepthStencilState = &depthStencil, .pColorBlendState = &colorBlending, .pDynamicState = &dynamicState, .layout = deferredPipelineLayout, .renderPass = nullptr},
+			{.colorAttachmentCount = 1, .pColorAttachmentFormats = &swapChainSurfaceFormat.format, .depthAttachmentFormat = vk::Format::eUndefined}};
+		deferredLightingPipeline = vk::raii::Pipeline(device, nullptr, pipelineChain.get<vk::GraphicsPipelineCreateInfo>());
 	}
 
 	ResourceHandle<TextureResource> createTextureImage(
@@ -1221,19 +1547,280 @@ class VulkanGameEngineApplication
 
 	void recordCommandBuffer(uint32_t imageIndex)
 	{
+		if (CurrentRenderPath == RenderPathMode::Deferred)
+		{
+			recordDeferredCommandBuffer(imageIndex);
+			return;
+		}
 		const uint32_t frameIndex = frameResources.currentFrame();
-		ForwardRendererInstance->Record(
-			frameResources.graphicsCommandBuffer(frameIndex),
-			imageIndex,
-			frameIndex,
-			graphicsPipeline,
-			pipelineLayout,
-			shadowGraphicsPipeline,
-			shadowPipelineLayout,
-			[this](vk::raii::CommandBuffer& commandBuffer, uint32_t particleFrame)
+		RenderGraph graph;
+		const auto shadowMap = graph.CreateImage(
+			"ShadowMap",
+			{{shadowMapResources.GetResolution(), shadowMapResources.GetResolution()},
+			 RenderGraph::ImageFormat::D32Sfloat,
+			 1,
+			 1,
+			 1,
+			 true,
+			 false});
+		const auto sceneColor = graph.CreateImage(
+			"ForwardColorMSAA",
+			{{swapChainExtent.width, swapChainExtent.height},
+			 RenderGraph::ImageFormat::R8G8B8A8Unorm,
+			 1,
+			 1,
+			 static_cast<uint32_t>(msaaSamples),
+			 true,
+			 false});
+		const auto depth = graph.CreateImage(
+			"ForwardDepthMSAA",
+			{{swapChainExtent.width, swapChainExtent.height},
+			 RenderGraph::ImageFormat::D32Sfloat,
+			 1,
+			 1,
+			 static_cast<uint32_t>(msaaSamples),
+			 true,
+			 false});
+		const auto swapchain = graph.CreateImage(
+			"Swapchain",
+			{{swapChainExtent.width, swapChainExtent.height},
+			 RenderGraph::ImageFormat::R8G8B8A8Unorm,
+			 1,
+			 1,
+			 1,
+			 true,
+			 false});
+
+		const auto shadowPass = graph.AddPass("ShadowPass");
+		graph.Write(shadowPass, shadowMap, RenderGraph::ImageUsage::DepthAttachment);
+		const auto forwardPass = graph.AddPass("ForwardOpaquePass");
+		graph.Read(forwardPass, shadowMap, RenderGraph::ImageUsage::Sampled);
+		graph.Write(forwardPass, sceneColor, RenderGraph::ImageUsage::ColorAttachment);
+		graph.Write(forwardPass, depth, RenderGraph::ImageUsage::DepthAttachment);
+		graph.Write(forwardPass, swapchain, RenderGraph::ImageUsage::ColorAttachment);
+		const auto particlePass = graph.AddPass("ParticleOverlayPass");
+		graph.ReadWrite(particlePass, swapchain, RenderGraph::ImageUsage::ColorAttachment);
+
+		const auto compilation = graph.Compile();
+		if (!compilation.Succeeded)
+		{
+			throw std::runtime_error("forward render graph failed to compile\n" + graph.DumpText(compilation));
+		}
+		if (!ForwardGraphDumpWritten)
+		{
+			ForwardGraphDumpWritten = WriteRenderGraphDump(graph, compilation, "forward");
+		}
+
+		auto& commandBuffer = frameResources.graphicsCommandBuffer(frameIndex);
+		commandBuffer.begin({});
+		RenderGraphExecutor executor(graph);
+		executor.BindImage(
+			shadowMap,
+			*shadowMapResources.GetImage(frameIndex),
+			vk::ImageAspectFlagBits::eDepth,
+			vk::ImageLayout::eUndefined,
+			vk::ImageLayout::eShaderReadOnlyOptimal);
+		executor.BindImage(
+			sceneColor,
+			*renderTargets.colorImage(),
+			vk::ImageAspectFlagBits::eColor,
+			vk::ImageLayout::eUndefined,
+			vk::ImageLayout::eColorAttachmentOptimal);
+		executor.BindImage(
+			depth,
+			*renderTargets.depthImage(),
+			vk::ImageAspectFlagBits::eDepth,
+			vk::ImageLayout::eUndefined,
+			vk::ImageLayout::eDepthAttachmentOptimal);
+		executor.BindImage(
+			swapchain,
+			swapChainImages[imageIndex],
+			vk::ImageAspectFlagBits::eColor,
+			vk::ImageLayout::eUndefined,
+			vk::ImageLayout::ePresentSrcKHR);
+		executor.Execute(
+			commandBuffer,
+			compilation,
+			[this, frameIndex, imageIndex, shadowPass, forwardPass, particlePass](vk::raii::CommandBuffer& passCommandBuffer, RenderGraph::PassId passId)
 			{
-				ParticleSystemInstance->RecordDraw(commandBuffer, particleFrame);
+				if (passId == shadowPass)
+				{
+					ForwardRendererInstance->RecordShadowPassContents(
+						passCommandBuffer,
+						frameIndex,
+						shadowGraphicsPipeline,
+						shadowPipelineLayout);
+				}
+				else if (passId == forwardPass)
+				{
+					ForwardRendererInstance->RecordForwardPassContents(
+						passCommandBuffer,
+						imageIndex,
+						frameIndex,
+						graphicsPipeline,
+						pipelineLayout,
+						nullptr);
+				}
+				else if (passId == particlePass)
+				{
+					const vk::RenderingAttachmentInfo colorAttachment{
+						.imageView = swapChainImageViews[imageIndex],
+						.imageLayout = vk::ImageLayout::eColorAttachmentOptimal,
+						.loadOp = vk::AttachmentLoadOp::eLoad,
+						.storeOp = vk::AttachmentStoreOp::eStore};
+					const vk::RenderingInfo renderingInfo{
+						.renderArea = {.offset = {0, 0}, .extent = swapChainExtent},
+						.layerCount = 1,
+						.colorAttachmentCount = 1,
+						.pColorAttachments = &colorAttachment};
+					passCommandBuffer.beginRendering(renderingInfo);
+					passCommandBuffer.setViewport(0, vk::Viewport(
+						0.0f,
+						0.0f,
+						static_cast<float>(swapChainExtent.width),
+						static_cast<float>(swapChainExtent.height),
+						0.0f,
+						1.0f));
+					passCommandBuffer.setScissor(0, vk::Rect2D(vk::Offset2D(0, 0), swapChainExtent));
+					ParticleSystemInstance->RecordDraw(passCommandBuffer, frameIndex);
+					passCommandBuffer.endRendering();
+				}
 			});
+		commandBuffer.end();
+	}
+
+	void recordDeferredCommandBuffer(uint32_t imageIndex)
+	{
+		const uint32_t frameIndex = frameResources.currentFrame();
+		RenderGraph graph;
+		const auto shadowMap = graph.CreateImage(
+			"ShadowMap",
+			{{shadowMapResources.GetResolution(), shadowMapResources.GetResolution()}, RenderGraph::ImageFormat::D32Sfloat, 1, 1, 1, true, false});
+		std::array<RenderGraph::ImageHandle, GBufferResources::AttachmentCount> gBufferColors{
+			graph.CreateImage("GBufferAlbedoMetallic", {{swapChainExtent.width, swapChainExtent.height}, RenderGraph::ImageFormat::R8G8B8A8Unorm, 1, 1, 1, true, false}),
+			graph.CreateImage("GBufferNormalRoughness", {{swapChainExtent.width, swapChainExtent.height}, RenderGraph::ImageFormat::R16G16B16A16Sfloat, 1, 1, 1, true, false}),
+			graph.CreateImage("GBufferWorldPosition", {{swapChainExtent.width, swapChainExtent.height}, RenderGraph::ImageFormat::R16G16B16A16Sfloat, 1, 1, 1, true, false}),
+			graph.CreateImage("GBufferEmissiveOcclusion", {{swapChainExtent.width, swapChainExtent.height}, RenderGraph::ImageFormat::R16G16B16A16Sfloat, 1, 1, 1, true, false})};
+		const auto gBufferDepth = graph.CreateImage(
+			"GBufferDepth",
+			{{swapChainExtent.width, swapChainExtent.height}, RenderGraph::ImageFormat::D32Sfloat, 1, 1, 1, true, false});
+		const auto swapchain = graph.CreateImage(
+			"Swapchain",
+			{{swapChainExtent.width, swapChainExtent.height}, RenderGraph::ImageFormat::R8G8B8A8Unorm, 1, 1, 1, true, false});
+
+		const auto shadowPass = graph.AddPass("ShadowPass");
+		graph.Write(shadowPass, shadowMap, RenderGraph::ImageUsage::DepthAttachment);
+		const auto gBufferPass = graph.AddPass("GBufferPass");
+		for (const auto resource : gBufferColors)
+		{
+			graph.Write(gBufferPass, resource, RenderGraph::ImageUsage::ColorAttachment);
+		}
+		graph.Write(gBufferPass, gBufferDepth, RenderGraph::ImageUsage::DepthAttachment);
+		const auto lightingPass = graph.AddPass("DeferredLightingPass");
+		graph.Read(lightingPass, shadowMap, RenderGraph::ImageUsage::Sampled);
+		for (const auto resource : gBufferColors)
+		{
+			graph.Read(lightingPass, resource, RenderGraph::ImageUsage::Sampled);
+		}
+		graph.Write(lightingPass, swapchain, RenderGraph::ImageUsage::ColorAttachment);
+		const auto particlePass = graph.AddPass("ParticleOverlayPass");
+		graph.ReadWrite(particlePass, swapchain, RenderGraph::ImageUsage::ColorAttachment);
+
+		const auto compilation = graph.Compile();
+		if (!compilation.Succeeded)
+		{
+			throw std::runtime_error("deferred render graph failed to compile\n" + graph.DumpText(compilation));
+		}
+		if (!DeferredGraphDumpWritten)
+		{
+			DeferredGraphDumpWritten = WriteRenderGraphDump(graph, compilation, "deferred");
+		}
+
+		auto& commandBuffer = frameResources.graphicsCommandBuffer(frameIndex);
+		commandBuffer.begin({});
+		RenderGraphExecutor executor(graph);
+		executor.BindImage(shadowMap, *shadowMapResources.GetImage(frameIndex), vk::ImageAspectFlagBits::eDepth, vk::ImageLayout::eUndefined, vk::ImageLayout::eShaderReadOnlyOptimal);
+		for (std::size_t attachment = 0; attachment < GBufferResources::AttachmentCount; ++attachment)
+		{
+			executor.BindImage(gBufferColors[attachment], *gBufferResources->ColorImage(frameIndex, attachment), vk::ImageAspectFlagBits::eColor, vk::ImageLayout::eUndefined, vk::ImageLayout::eShaderReadOnlyOptimal);
+		}
+		executor.BindImage(gBufferDepth, *gBufferResources->DepthImage(frameIndex), vk::ImageAspectFlagBits::eDepth, vk::ImageLayout::eUndefined, vk::ImageLayout::eDepthAttachmentOptimal);
+		executor.BindImage(swapchain, swapChainImages[imageIndex], vk::ImageAspectFlagBits::eColor, vk::ImageLayout::eUndefined, vk::ImageLayout::ePresentSrcKHR);
+		executor.Execute(
+			commandBuffer,
+			compilation,
+			[this, frameIndex, imageIndex, shadowPass, gBufferPass, lightingPass, particlePass](vk::raii::CommandBuffer& passCommandBuffer, RenderGraph::PassId passId)
+			{
+				if (passId == shadowPass)
+				{
+					ForwardRendererInstance->RecordShadowPassContents(passCommandBuffer, frameIndex, shadowGraphicsPipeline, shadowPipelineLayout);
+					return;
+				}
+				if (passId == gBufferPass)
+				{
+					std::array<vk::RenderingAttachmentInfo, GBufferResources::AttachmentCount> attachments{};
+					for (std::size_t attachment = 0; attachment < attachments.size(); ++attachment)
+					{
+						attachments[attachment] = vk::RenderingAttachmentInfo{
+							.imageView = gBufferResources->ColorView(frameIndex, attachment),
+							.imageLayout = vk::ImageLayout::eColorAttachmentOptimal,
+							.loadOp = vk::AttachmentLoadOp::eClear,
+							.storeOp = vk::AttachmentStoreOp::eStore,
+							.clearValue = vk::ClearColorValue(0.0f, 0.0f, 0.0f, 0.0f)};
+					}
+					const vk::RenderingAttachmentInfo depthAttachment{
+						.imageView = gBufferResources->DepthView(frameIndex),
+						.imageLayout = vk::ImageLayout::eDepthAttachmentOptimal,
+						.loadOp = vk::AttachmentLoadOp::eClear,
+						.storeOp = vk::AttachmentStoreOp::eStore,
+						.clearValue = vk::ClearDepthStencilValue(1.0f, 0)};
+					const vk::RenderingInfo renderingInfo{
+						.renderArea = {.offset = {0, 0}, .extent = swapChainExtent},
+						.layerCount = 1,
+						.colorAttachmentCount = static_cast<uint32_t>(attachments.size()),
+						.pColorAttachments = attachments.data(),
+						.pDepthAttachment = &depthAttachment};
+					passCommandBuffer.beginRendering(renderingInfo);
+					passCommandBuffer.setViewport(0, vk::Viewport(0.0f, 0.0f, static_cast<float>(swapChainExtent.width), static_cast<float>(swapChainExtent.height), 0.0f, 1.0f));
+					passCommandBuffer.setScissor(0, vk::Rect2D(vk::Offset2D(0, 0), swapChainExtent));
+					MeshRendererInstance->RecordDraws(passCommandBuffer, gBufferPipeline, gBufferPipelineLayout, frameIndex);
+					passCommandBuffer.endRendering();
+					return;
+				}
+				if (passId == lightingPass)
+				{
+					const vk::RenderingAttachmentInfo colorAttachment{
+						.imageView = swapChainImageViews[imageIndex],
+						.imageLayout = vk::ImageLayout::eColorAttachmentOptimal,
+						.loadOp = vk::AttachmentLoadOp::eClear,
+						.storeOp = vk::AttachmentStoreOp::eStore,
+						.clearValue = vk::ClearColorValue(0.0f, 0.0f, 0.0f, 1.0f)};
+					const vk::RenderingInfo renderingInfo{.renderArea = {.offset = {0, 0}, .extent = swapChainExtent}, .layerCount = 1, .colorAttachmentCount = 1, .pColorAttachments = &colorAttachment};
+					passCommandBuffer.beginRendering(renderingInfo);
+					passCommandBuffer.setViewport(0, vk::Viewport(0.0f, 0.0f, static_cast<float>(swapChainExtent.width), static_cast<float>(swapChainExtent.height), 0.0f, 1.0f));
+					passCommandBuffer.setScissor(0, vk::Rect2D(vk::Offset2D(0, 0), swapChainExtent));
+					passCommandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, *deferredLightingPipeline);
+					passCommandBuffer.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, *deferredPipelineLayout, 0, *deferredDescriptorSets[frameIndex], nullptr);
+					passCommandBuffer.draw(3, 1, 0, 0);
+					passCommandBuffer.endRendering();
+					return;
+				}
+				if (passId == particlePass)
+				{
+					const vk::RenderingAttachmentInfo colorAttachment{
+						.imageView = swapChainImageViews[imageIndex],
+						.imageLayout = vk::ImageLayout::eColorAttachmentOptimal,
+						.loadOp = vk::AttachmentLoadOp::eLoad,
+						.storeOp = vk::AttachmentStoreOp::eStore};
+					const vk::RenderingInfo renderingInfo{.renderArea = {.offset = {0, 0}, .extent = swapChainExtent}, .layerCount = 1, .colorAttachmentCount = 1, .pColorAttachments = &colorAttachment};
+					passCommandBuffer.beginRendering(renderingInfo);
+					passCommandBuffer.setViewport(0, vk::Viewport(0.0f, 0.0f, static_cast<float>(swapChainExtent.width), static_cast<float>(swapChainExtent.height), 0.0f, 1.0f));
+					passCommandBuffer.setScissor(0, vk::Rect2D(vk::Offset2D(0, 0), swapChainExtent));
+					ParticleSystemInstance->RecordDraw(passCommandBuffer, frameIndex);
+					passCommandBuffer.endRendering();
+				}
+			});
+		commandBuffer.end();
 	}
 
 #if 0 // Legacy frame recorder retained temporarily as a learning reference.
@@ -1529,6 +2116,26 @@ class VulkanGameEngineApplication
 			shadowViewProjection,
 			time,
 			CurrentDebugView);
+		const auto& light = *DirectionalLight;
+		const DeferredLightingUniformBufferObject deferredUniform{
+			.ShadowViewProjection = shadowViewProjection,
+			.LightDirection = glm::vec4(light.GetDirection(), 0.0f),
+			.LightColorIntensity = glm::vec4(light.GetColor(), light.GetIntensity()),
+			.CameraPosition = glm::vec4(ActiveCamera->GetPosition(), 1.0f),
+			.MaterialBaseColorAmbient = glm::vec4(1.0f, 1.0f, 1.0f, light.GetAmbientStrength()),
+			.MaterialMetallicRoughness = glm::vec4(1.0f, 1.0f, 0.0f, 0.0f),
+			.MaterialOcclusion = glm::vec4(1.0f, 0.0f, 0.0f, 0.0f),
+			.MaterialEmissive = glm::vec4(0.0f),
+			.DebugView = glm::vec4(static_cast<float>(static_cast<uint32_t>(CurrentDebugView)), 0.0f, 0.0f, 0.0f),
+			.ShadowMapParameters = glm::vec4(
+				1.0f / static_cast<float>(shadowMapResources.GetResolution()),
+				1.0f / static_cast<float>(shadowMapResources.GetResolution()),
+				0.001f,
+				0.01f)};
+		std::memcpy(
+			deferredUniformBuffersMapped[currentImage],
+			&deferredUniform,
+			sizeof(deferredUniform));
 	}
 
 	[[nodiscard]] glm::mat4 GetShadowViewProjection() const

@@ -22,7 +22,7 @@ void compMain(uint3 threadId : SV_DispatchThreadID)
     Particle particle = particlesIn[index];
     particle.position += particle.velocity * computeUbo.deltaTime;
 
-    const float particleLimit = 0.85;
+    const float particleLimit = 1.0f;
 
     if (particle.position.x <= -particleLimit || particle.position.x >= particleLimit)
     {

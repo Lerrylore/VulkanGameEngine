@@ -109,6 +109,9 @@ bool Window::IsKeyDown(WindowKey key) const noexcept
 	case WindowKey::F5:
 		glfwKey = GLFW_KEY_F5;
 		break;
+	case WindowKey::F6:
+		glfwKey = GLFW_KEY_F6;
+		break;
 	}
 
 	return glfwGetKey(handle, glfwKey) == GLFW_PRESS;

@@ -138,8 +138,12 @@
     <ClCompile Include="Engine\Platform\Window.cpp" />
     <ClCompile Include="Engine\Renderer\FrameResources.cpp" />
     <ClCompile Include="Engine\Renderer\ForwardRenderer.cpp" />
+    <ClCompile Include="Engine\Renderer\GBufferResources.cpp" />
     <ClCompile Include="Engine\Renderer\MeshRenderer.cpp" />
     <ClCompile Include="Engine\Renderer\ParticleSystem.cpp" />
+    <ClCompile Include="Engine\Renderer\RenderGraph.cpp" />
+    <ClCompile Include="Engine\Renderer\RenderGraphExecutor.cpp" />
+    <ClCompile Include="Engine\Renderer\RenderGraphSelfTest.cpp" />
     <ClCompile Include="Engine\Renderer\RenderTargetResources.cpp" />
     <ClCompile Include="Engine\Renderer\ShadowMapResources.cpp" />
     <ClCompile Include="Engine\Renderer\SwapchainResources.cpp" />
@@ -182,8 +186,12 @@
     <ClInclude Include="Engine\Platform\Window.h" />
     <ClInclude Include="Engine\Renderer\FrameResources.h" />
     <ClInclude Include="Engine\Renderer\ForwardRenderer.h" />
+    <ClInclude Include="Engine\Renderer\GBufferResources.h" />
     <ClInclude Include="Engine\Renderer\MeshRenderer.h" />
     <ClInclude Include="Engine\Renderer\ParticleSystem.h" />
+    <ClInclude Include="Engine\Renderer\RenderGraph.h" />
+    <ClInclude Include="Engine\Renderer\RenderGraphExecutor.h" />
+    <ClInclude Include="Engine\Renderer\RenderGraphSelfTest.h" />
     <ClInclude Include="Engine\Renderer\RenderTargetResources.h" />
     <ClInclude Include="Engine\Renderer\ShadowMapResources.h" />
     <ClInclude Include="Engine\Renderer\SwapchainResources.h" />
@@ -220,6 +228,8 @@
   <ItemGroup>
     <None Include="main.cpp" />
     <None Include="Shaders\compute.slang" />
+    <None Include="Shaders\gbuffer.slang" />
+    <None Include="Shaders\deferred_lighting.slang" />
     <None Include="Shaders\particles.slang" />
     <None Include="Shaders\shader.frag" />
     <None Include="Shaders\shader.vert" />
@@ -229,8 +239,8 @@
       <FileType>Document</FileType>
       <Command>call &quot;$(ProjectDir)Shaders\compile.bat&quot;</Command>
       <Message>Compiling Slang shaders...</Message>
-      <Outputs>$(ProjectDir)Shaders\slang.spv;$(ProjectDir)Shaders\particles.spv;$(ProjectDir)Shaders\compute.spv</Outputs>
-      <AdditionalInputs>$(ProjectDir)Shaders\compile.bat;$(ProjectDir)Shaders\particles.slang;$(ProjectDir)Shaders\compute.slang;%(AdditionalInputs)</AdditionalInputs>
+      <Outputs>$(ProjectDir)Shaders\slang.spv;$(ProjectDir)Shaders\particles.spv;$(ProjectDir)Shaders\compute.spv;$(ProjectDir)Shaders\gbuffer.spv;$(ProjectDir)Shaders\deferred_lighting.spv</Outputs>
+      <AdditionalInputs>$(ProjectDir)Shaders\compile.bat;$(ProjectDir)Shaders\particles.slang;$(ProjectDir)Shaders\compute.slang;$(ProjectDir)Shaders\gbuffer.slang;$(ProjectDir)Shaders\deferred_lighting.slang;%(AdditionalInputs)</AdditionalInputs>
     </CustomBuild>
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

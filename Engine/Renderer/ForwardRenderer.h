@@ -35,6 +35,22 @@ class ForwardRenderer final
 		const vk::raii::PipelineLayout& shadowPipelineLayout,
 		ParticleDrawCallback particleDraw);
 
+	// Graph callbacks: these functions record only pass contents. Image layout
+	// transitions are owned by RenderGraphExecutor.
+	void RecordShadowPassContents(
+		vk::raii::CommandBuffer& commandBuffer,
+		uint32_t frameIndex,
+		const vk::raii::Pipeline& shadowPipeline,
+		const vk::raii::PipelineLayout& shadowPipelineLayout);
+
+	void RecordForwardPassContents(
+		vk::raii::CommandBuffer& commandBuffer,
+		uint32_t imageIndex,
+		uint32_t frameIndex,
+		const vk::raii::Pipeline& graphicsPipeline,
+		const vk::raii::PipelineLayout& graphicsPipelineLayout,
+		ParticleDrawCallback particleDraw);
+
   private:
 	void RecordShadowPass(
 		vk::raii::CommandBuffer& commandBuffer,

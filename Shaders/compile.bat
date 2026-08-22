@@ -19,6 +19,26 @@ pushd "%~dp0"
     -o slang.spv
 if errorlevel 1 goto :compile_failed
 
+"%VULKAN_SDK%\Bin\slangc.exe" gbuffer.slang ^
+    -target spirv ^
+    -profile spirv_1_4 ^
+    -emit-spirv-directly ^
+    -fvk-use-entrypoint-name ^
+    -entry gbufferVertMain ^
+    -entry gbufferFragMain ^
+    -o gbuffer.spv
+if errorlevel 1 goto :compile_failed
+
+"%VULKAN_SDK%\Bin\slangc.exe" deferred_lighting.slang ^
+    -target spirv ^
+    -profile spirv_1_4 ^
+    -emit-spirv-directly ^
+    -fvk-use-entrypoint-name ^
+    -entry deferredVertMain ^
+    -entry deferredFragMain ^
+    -o deferred_lighting.spv
+if errorlevel 1 goto :compile_failed
+
 "%VULKAN_SDK%\Bin\slangc.exe" particles.slang ^
     -target spirv ^
     -profile spirv_1_4 ^

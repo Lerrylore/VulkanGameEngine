@@ -126,7 +126,6 @@ void ForwardRenderer::RecordShadowPass(
 	const vk::raii::PipelineLayout& shadowPipelineLayout)
 {
 	const vk::raii::Image& shadowImage = ShadowMaps.GetImage(frameIndex);
-	const vk::Extent2D shadowExtent{ShadowMaps.GetResolution(), ShadowMaps.GetResolution()};
 	TransitionImageLayout(
 		commandBuffer,
 		*shadowImage,
@@ -137,6 +136,26 @@ void ForwardRenderer::RecordShadowPass(
 		vk::PipelineStageFlagBits2::eTopOfPipe,
 		vk::PipelineStageFlagBits2::eEarlyFragmentTests | vk::PipelineStageFlagBits2::eLateFragmentTests,
 		vk::ImageAspectFlagBits::eDepth);
+	RecordShadowPassContents(commandBuffer, frameIndex, shadowPipeline, shadowPipelineLayout);
+	TransitionImageLayout(
+		commandBuffer,
+		*shadowImage,
+		vk::ImageLayout::eDepthAttachmentOptimal,
+		vk::ImageLayout::eShaderReadOnlyOptimal,
+		vk::AccessFlagBits2::eDepthStencilAttachmentWrite,
+		vk::AccessFlagBits2::eShaderSampledRead,
+		vk::PipelineStageFlagBits2::eEarlyFragmentTests | vk::PipelineStageFlagBits2::eLateFragmentTests,
+		vk::PipelineStageFlagBits2::eFragmentShader,
+		vk::ImageAspectFlagBits::eDepth);
+}
+
+void ForwardRenderer::RecordShadowPassContents(
+	vk::raii::CommandBuffer& commandBuffer,
+	uint32_t frameIndex,
+	const vk::raii::Pipeline& shadowPipeline,
+	const vk::raii::PipelineLayout& shadowPipelineLayout)
+{
+	const vk::Extent2D shadowExtent{ShadowMaps.GetResolution(), ShadowMaps.GetResolution()};
 
 	const vk::ClearValue clearDepth = vk::ClearDepthStencilValue(1.0f, 0);
 	const vk::RenderingAttachmentInfo depthAttachment{
@@ -164,17 +183,57 @@ void ForwardRenderer::RecordShadowPass(
 	commandBuffer.setScissor(0, vk::Rect2D(vk::Offset2D(0, 0), shadowExtent));
 	Meshes.RecordShadowDraws(commandBuffer, shadowPipeline, shadowPipelineLayout, frameIndex);
 	commandBuffer.endRendering();
+}
 
-	TransitionImageLayout(
-		commandBuffer,
-		*shadowImage,
-		vk::ImageLayout::eDepthAttachmentOptimal,
-		vk::ImageLayout::eShaderReadOnlyOptimal,
-		vk::AccessFlagBits2::eDepthStencilAttachmentWrite,
-		vk::AccessFlagBits2::eShaderSampledRead,
-		vk::PipelineStageFlagBits2::eEarlyFragmentTests | vk::PipelineStageFlagBits2::eLateFragmentTests,
-		vk::PipelineStageFlagBits2::eFragmentShader,
-		vk::ImageAspectFlagBits::eDepth);
+void ForwardRenderer::RecordForwardPassContents(
+	vk::raii::CommandBuffer& commandBuffer,
+	uint32_t imageIndex,
+	uint32_t frameIndex,
+	const vk::raii::Pipeline& graphicsPipeline,
+	const vk::raii::PipelineLayout& graphicsPipelineLayout,
+	ParticleDrawCallback particleDraw)
+{
+	const vk::ClearValue clearColor = vk::ClearColorValue(0.0f, 0.0f, 0.0f, 1.0f);
+	const vk::ClearValue clearDepth = vk::ClearDepthStencilValue(1.0f, 0);
+	const vk::RenderingAttachmentInfo colorAttachment{
+		.imageView = RenderTargets.colorImageView(),
+		.imageLayout = vk::ImageLayout::eColorAttachmentOptimal,
+		.resolveMode = vk::ResolveModeFlagBits::eAverage,
+		.resolveImageView = Swapchain.imageViews()[imageIndex],
+		.resolveImageLayout = vk::ImageLayout::eColorAttachmentOptimal,
+		.loadOp = vk::AttachmentLoadOp::eClear,
+		.storeOp = vk::AttachmentStoreOp::eStore,
+		.clearValue = clearColor};
+	const vk::RenderingAttachmentInfo depthAttachment{
+		.imageView = RenderTargets.depthImageView(),
+		.imageLayout = vk::ImageLayout::eDepthAttachmentOptimal,
+		.loadOp = vk::AttachmentLoadOp::eClear,
+		.storeOp = vk::AttachmentStoreOp::eDontCare,
+		.clearValue = clearDepth};
+	const vk::RenderingInfo renderingInfo{
+		.renderArea = {.offset = {0, 0}, .extent = Swapchain.extent()},
+		.layerCount = 1,
+		.colorAttachmentCount = 1,
+		.pColorAttachments = &colorAttachment,
+		.pDepthAttachment = &depthAttachment};
+
+	commandBuffer.beginRendering(renderingInfo);
+	commandBuffer.setViewport(
+		0,
+		vk::Viewport(
+			0.0f,
+			0.0f,
+			static_cast<float>(Swapchain.extent().width),
+			static_cast<float>(Swapchain.extent().height),
+			0.0f,
+			1.0f));
+	commandBuffer.setScissor(0, vk::Rect2D(vk::Offset2D(0, 0), Swapchain.extent()));
+	Meshes.RecordDraws(commandBuffer, graphicsPipeline, graphicsPipelineLayout, frameIndex);
+	if (particleDraw)
+	{
+		particleDraw(commandBuffer, frameIndex);
+	}
+	commandBuffer.endRendering();
 }
 
 void ForwardRenderer::TransitionImageLayout(
