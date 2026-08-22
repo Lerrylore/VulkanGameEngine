@@ -279,8 +279,8 @@ void MeshRenderer::UpdateUniformBuffers(
 			.ShadowMapParameters = glm::vec4(
 				1.0f / static_cast<float>(ShadowMaps.GetResolution()),
 				1.0f / static_cast<float>(ShadowMaps.GetResolution()),
-				0.005f,
-				0.0f)};
+				0.001f,
+				0.01f)};
 		std::memcpy(
 			drawResources.UniformBuffersMapped[frameIndex],
 			&uniformBuffer,

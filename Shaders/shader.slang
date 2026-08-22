@@ -60,7 +60,7 @@ float3 EncodeNormal(float3 normal)
     return normal * 0.5 + 0.5;
 }
 
-float CalculateShadowVisibility(float3 shadowCoordinates)
+float CalculateShadowVisibility(float3 shadowCoordinates, float bias)
 {
     if (shadowCoordinates.x < 0.0 || shadowCoordinates.x > 1.0 ||
         shadowCoordinates.y < 0.0 || shadowCoordinates.y > 1.0 ||
@@ -71,7 +71,6 @@ float CalculateShadowVisibility(float3 shadowCoordinates)
 
     float visibility = 0.0;
     float2 texelSize = ubo.shadowMapParameters.xy;
-    float bias = ubo.shadowMapParameters.z;
     for (int offsetX = -1; offsetX <= 1; ++offsetX)
     {
         for (int offsetY = -1; offsetY <= 1; ++offsetY)
@@ -139,7 +138,11 @@ float4 fragMain(VSOutput vertIn) : SV_TARGET {
    float3 halfway = normalize(surfaceToLight + surfaceToCamera);
    float3 shadowCoordinates = vertIn.shadowPosition.xyz / vertIn.shadowPosition.w;
    shadowCoordinates.xy = shadowCoordinates.xy * 0.5 + 0.5;
-   float shadowVisibility = CalculateShadowVisibility(shadowCoordinates);
+   float lightFacing = max(dot(geometricNormal, surfaceToLight), 0.0);
+   float shadowBias = max(
+       ubo.shadowMapParameters.z,
+       ubo.shadowMapParameters.w * (1.0 - lightFacing));
+   float shadowVisibility = CalculateShadowVisibility(shadowCoordinates, shadowBias);
    float normalLight = max(dot(worldNormal, surfaceToLight), 0.0);
    float normalView = max(dot(worldNormal, surfaceToCamera), 0.0);
    float4 metallicRoughnessSample = metallicRoughnessMap.Sample(vertIn.fragTexCoord * 1.0);
