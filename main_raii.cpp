@@ -107,11 +107,8 @@ struct GameObject
 	glm::vec3 rotation{0.0f};
 	glm::vec3 scale{1.0f};
 
-	// Memory is declared before the buffers so RAII destroys each buffer before
-	// releasing the memory it is bound to.
-	std::vector<vk::raii::DeviceMemory> uniformBuffersMemory;
-	std::vector<vk::raii::Buffer>       uniformBuffers;
-	std::vector<void *>                 uniformBuffersMapped;
+	std::vector<BufferAllocation>        uniformBuffers;
+	std::vector<void*>                   uniformBuffersMapped;
 	std::vector<vk::raii::DescriptorSet> descriptorSets;
 
 	[[nodiscard]] glm::mat4 getModelMatrix() const
@@ -976,21 +973,20 @@ class VulkanGameEngineApplication
 	{
 		for (auto &gameObject : gameObjects)
 		{
-			gameObject.uniformBuffersMemory.reserve(MAX_FRAMES_IN_FLIGHT);
+			assert(gameObject.uniformBuffers.empty() && gameObject.uniformBuffersMapped.empty());
 			gameObject.uniformBuffers.reserve(MAX_FRAMES_IN_FLIGHT);
 			gameObject.uniformBuffersMapped.reserve(MAX_FRAMES_IN_FLIGHT);
 
 			for (size_t frame = 0; frame < MAX_FRAMES_IN_FLIGHT; ++frame)
 			{
 				constexpr vk::DeviceSize bufferSize = sizeof(UniformBufferObject);
-				auto [buffer, bufferMemory] = createBuffer(
+				gameObject.uniformBuffers.emplace_back(
+					vulkan,
 					bufferSize,
 					vk::BufferUsageFlagBits::eUniformBuffer,
 					vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent);
-				gameObject.uniformBuffersMemory.emplace_back(std::move(bufferMemory));
-				gameObject.uniformBuffers.emplace_back(std::move(buffer));
 				gameObject.uniformBuffersMapped.emplace_back(
-					gameObject.uniformBuffersMemory.back().mapMemory(0, bufferSize));
+					gameObject.uniformBuffers.back().memory().mapMemory(0, bufferSize));
 			}
 		}
 	}
@@ -1040,7 +1036,7 @@ class VulkanGameEngineApplication
 
 			for (size_t frame = 0; frame < MAX_FRAMES_IN_FLIGHT; ++frame)
 			{
-				vk::DescriptorBufferInfo bufferInfo{ .buffer = gameObject.uniformBuffers[frame], .offset = 0, .range = sizeof(UniformBufferObject) };
+				vk::DescriptorBufferInfo bufferInfo{ .buffer = *gameObject.uniformBuffers[frame].buffer(), .offset = 0, .range = sizeof(UniformBufferObject) };
 				vk::DescriptorImageInfo  imageInfo{ .sampler = textureSampler, .imageView = textureImageView, .imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal };
 
 				std::array<vk::WriteDescriptorSet, 2> descriptorWrites{ {{.dstSet = gameObject.descriptorSets[frame],
