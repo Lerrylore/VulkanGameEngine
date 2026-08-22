@@ -193,6 +193,10 @@ class VulkanGameEngineApplication
 	vk::raii::DescriptorSetLayout computeDescriptorSetLayout = nullptr;
 	vk::raii::PipelineLayout      computePipelineLayout = nullptr;
 	vk::raii::Pipeline            computePipeline = nullptr;
+	bool GraphicsPipelineDirty = false;
+	bool ShadowPipelineDirty = false;
+	bool ParticlePipelineDirty = false;
+	bool ComputePipelineDirty = false;
 
 	ResourceHandle<MeshResource> meshResource;
 	ResourceHandle<TextureResource> textureResource;
@@ -294,9 +298,28 @@ class VulkanGameEngineApplication
 			throw std::runtime_error("failed to load one or more shader resources");
 		}
 
-		HotReload.Watch(MainShader, "Shaders/slang.spv");
-		HotReload.Watch(ParticleShader, "Shaders/particles.spv");
-		HotReload.Watch(ComputeShader, "Shaders/compute.spv");
+		HotReload.Watch(
+			MainShader,
+			"Shaders/slang.spv",
+			[this]()
+			{
+				GraphicsPipelineDirty = true;
+				ShadowPipelineDirty = true;
+			});
+		HotReload.Watch(
+			ParticleShader,
+			"Shaders/particles.spv",
+			[this]()
+			{
+				ParticlePipelineDirty = true;
+			});
+		HotReload.Watch(
+			ComputeShader,
+			"Shaders/compute.spv",
+			[this]()
+			{
+				ComputePipelineDirty = true;
+			});
 	}
 
 	void startAsyncResourceLoad()
@@ -332,15 +355,36 @@ class VulkanGameEngineApplication
 					AsyncShaderReported = true;
 				}
 			}
-			if (HotReload.Poll() > 0)
+			HotReload.Poll();
+			if (GraphicsPipelineDirty ||
+				ShadowPipelineDirty ||
+				ParticlePipelineDirty ||
+				ComputePipelineDirty)
 			{
 				// A pipeline keeps the shader code it was created from. Rebuild after
 				// the module reload, and wait until old frame work has completed.
 				device.waitIdle();
-				createGraphicsPipeline();
-				createShadowGraphicsPipeline();
-				createParticleGraphicsPipeline();
-				createComputePipeline();
+				if (GraphicsPipelineDirty)
+				{
+					createGraphicsPipeline();
+				}
+				if (ShadowPipelineDirty)
+				{
+					createShadowGraphicsPipeline();
+				}
+				if (ParticlePipelineDirty)
+				{
+					createParticleGraphicsPipeline();
+				}
+				if (ComputePipelineDirty)
+				{
+					createComputePipeline();
+				}
+
+				GraphicsPipelineDirty = false;
+				ShadowPipelineDirty = false;
+				ParticlePipelineDirty = false;
+				ComputePipelineDirty = false;
 			}
 			scene.Update(deltaTime);
 			drawFrame();

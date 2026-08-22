@@ -30,6 +30,10 @@ uint32_t HotReloadResourceManager::Poll()
 		if (success)
 		{
 			++reloaded;
+			if (watch.OnReload)
+			{
+				watch.OnReload();
+			}
 		}
 	}
 	return reloaded;
