@@ -11,7 +11,6 @@
 #include <stdexcept>
 #include <unordered_map>
 #include <vector>
-#define TINYOBJLOADER_IMPLEMENTATION
 #include <tiny_obj_loader.h>
 #define GLM_FORCE_DEPTH_ZERO_TO_ONE
 #include <glm/glm.hpp>
@@ -29,10 +28,7 @@
 #include "Engine/Scene/GameObject.h"
 #include "Engine/Vulkan/VulkanContext.h"
 
-// STB Image implementation
-#define STB_IMAGE_IMPLEMENTATION
 #include <stb_image.h>
-#define STB_IMAGE_RESIZE_IMPLEMENTATION
 #include <stb_image_resize2.h>
 
 #define GLM_FORCE_DEFAULT_ALIGNED_GENTYPES

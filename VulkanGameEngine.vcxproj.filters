@@ -28,6 +28,9 @@
     <Filter Include="Engine\Scene">
       <UniqueIdentifier>{CB74613A-85CC-4C0B-85D3-10396506BC71}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Engine\ThirdParty">
+      <UniqueIdentifier>{D287B1BC-F1FB-4A77-9E9D-B49ACF7057A4}</UniqueIdentifier>
+    </Filter>
     <Filter Include="Engine\Vulkan">
       <UniqueIdentifier>{98B05178-0A17-4F36-AC9B-0640C81228EE}</UniqueIdentifier>
     </Filter>
@@ -63,6 +66,9 @@
     </ClCompile>
     <ClCompile Include="Engine\Scene\GameObject.cpp">
       <Filter>Engine\Scene</Filter>
+    </ClCompile>
+    <ClCompile Include="Engine\ThirdParty\ThirdPartyImplementations.cpp">
+      <Filter>Engine\ThirdParty</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>

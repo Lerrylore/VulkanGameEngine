@@ -141,6 +141,7 @@
     <ClCompile Include="Engine\Resources\MeshResource.cpp" />
     <ClCompile Include="Engine\Resources\TextureResource.cpp" />
     <ClCompile Include="Engine\Scene\GameObject.cpp" />
+    <ClCompile Include="Engine\ThirdParty\ThirdPartyImplementations.cpp" />
     <ClCompile Include="Engine\Vulkan\VulkanContext.cpp" />
   </ItemGroup>
   <ItemGroup>
