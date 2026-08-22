@@ -64,7 +64,13 @@
     <ClCompile Include="Engine\Resources\TextureResource.cpp">
       <Filter>Engine\Resources</Filter>
     </ClCompile>
+    <ClCompile Include="Engine\Scene\Component.cpp">
+      <Filter>Engine\Scene</Filter>
+    </ClCompile>
     <ClCompile Include="Engine\Scene\GameObject.cpp">
+      <Filter>Engine\Scene</Filter>
+    </ClCompile>
+    <ClCompile Include="Engine\Scene\TransformComponent.cpp">
       <Filter>Engine\Scene</Filter>
     </ClCompile>
     <ClCompile Include="Engine\ThirdParty\ThirdPartyImplementations.cpp">
@@ -96,7 +102,13 @@
     <ClInclude Include="Engine\Resources\TextureResource.h">
       <Filter>Engine\Resources</Filter>
     </ClInclude>
+    <ClInclude Include="Engine\Scene\Component.h">
+      <Filter>Engine\Scene</Filter>
+    </ClInclude>
     <ClInclude Include="Engine\Scene\GameObject.h">
+      <Filter>Engine\Scene</Filter>
+    </ClInclude>
+    <ClInclude Include="Engine\Scene\TransformComponent.h">
       <Filter>Engine\Scene</Filter>
     </ClInclude>
     <ClInclude Include="Engine\Vulkan\VulkanContext.h">

@@ -26,6 +26,7 @@
 #include "Engine/Resources/MeshResource.h"
 #include "Engine/Resources/TextureResource.h"
 #include "Engine/Scene/GameObject.h"
+#include "Engine/Scene/TransformComponent.h"
 #include "Engine/Vulkan/VulkanContext.h"
 
 #include <stb_image.h>
@@ -873,17 +874,17 @@ class VulkanGameEngineApplication
 
 	void setupGameObjects()
 	{
-		gameObjects[0].scene.position = {0.0f, 0.0f, 0.0f};
-		gameObjects[0].scene.rotation = {0.0f, 0.0f, 0.0f};
-		gameObjects[0].scene.scale    = {0.7f, 0.7f, 0.7f};
+		gameObjects[0].scene.transform().setPosition({0.0f, 0.0f, 0.0f});
+		gameObjects[0].scene.transform().setRotation({0.0f, 0.0f, 0.0f});
+		gameObjects[0].scene.transform().setScale({0.7f, 0.7f, 0.7f});
 
-		gameObjects[1].scene.position = {-1.35f, 0.0f, -0.35f};
-		gameObjects[1].scene.rotation = {0.0f, 0.0f, glm::radians(-25.0f)};
-		gameObjects[1].scene.scale    = {0.55f, 0.55f, 0.55f};
+		gameObjects[1].scene.transform().setPosition({-1.35f, 0.0f, -0.35f});
+		gameObjects[1].scene.transform().setRotation({0.0f, 0.0f, glm::radians(-25.0f)});
+		gameObjects[1].scene.transform().setScale({0.55f, 0.55f, 0.55f});
 
-		gameObjects[2].scene.position = {1.35f, 0.0f, -0.35f};
-		gameObjects[2].scene.rotation = {0.0f, 0.0f, glm::radians(25.0f)};
-		gameObjects[2].scene.scale    = {0.55f, 0.55f, 0.55f};
+		gameObjects[2].scene.transform().setPosition({1.35f, 0.0f, -0.35f});
+		gameObjects[2].scene.transform().setRotation({0.0f, 0.0f, glm::radians(25.0f)});
+		gameObjects[2].scene.transform().setScale({0.55f, 0.55f, 0.55f});
 	}
 
 	void createUniformBuffers()
@@ -1321,7 +1322,7 @@ class VulkanGameEngineApplication
 			const float direction = objectIndex % 2 == 0 ? 1.0f : -1.0f;
 
 			UniformBufferObject ubo{};
-			ubo.model = gameObject.scene.modelMatrix() * glm::rotate(
+			ubo.model = gameObject.scene.transform().modelMatrix() * glm::rotate(
 				glm::mat4(1.0f),
 				direction * time * glm::radians(35.0f),
 				glm::vec3(0.0f, 0.0f, 1.0f));

@@ -140,7 +140,9 @@
     <ClCompile Include="Engine\Resources\ImageAllocation.cpp" />
     <ClCompile Include="Engine\Resources\MeshResource.cpp" />
     <ClCompile Include="Engine\Resources\TextureResource.cpp" />
+    <ClCompile Include="Engine\Scene\Component.cpp" />
     <ClCompile Include="Engine\Scene\GameObject.cpp" />
+    <ClCompile Include="Engine\Scene\TransformComponent.cpp" />
     <ClCompile Include="Engine\ThirdParty\ThirdPartyImplementations.cpp" />
     <ClCompile Include="Engine\Vulkan\VulkanContext.cpp" />
   </ItemGroup>
@@ -153,7 +155,9 @@
     <ClInclude Include="Engine\Resources\ImageAllocation.h" />
     <ClInclude Include="Engine\Resources\MeshResource.h" />
     <ClInclude Include="Engine\Resources\TextureResource.h" />
+    <ClInclude Include="Engine\Scene\Component.h" />
     <ClInclude Include="Engine\Scene\GameObject.h" />
+    <ClInclude Include="Engine\Scene\TransformComponent.h" />
     <ClInclude Include="Engine\Vulkan\VulkanContext.h" />
   </ItemGroup>
   <ItemGroup>
