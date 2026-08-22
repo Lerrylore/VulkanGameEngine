@@ -20,6 +20,7 @@
 
 #include "Engine/Application/ApplicationLoop.h"
 #include "Engine/Application/ApplicationConfig.h"
+#include "Engine/Application/VulkanGameEngineApplication.h"
 #include "Engine/Application/DebugViewController.h"
 #include "Engine/Platform/Window.h"
 #include "Engine/Renderer/FrameResources.h"
@@ -1642,7 +1643,7 @@ class VulkanGameEngineApplication
 
 };
 
-int main()
+int RunVulkanGameEngineApplication()
 {
 	try
 	{
