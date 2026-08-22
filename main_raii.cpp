@@ -19,6 +19,7 @@
 #include <chrono>
 
 #include "Engine/Application/ApplicationLoop.h"
+#include "Engine/Application/ApplicationConfig.h"
 #include "Engine/Application/DebugViewController.h"
 #include "Engine/Platform/Window.h"
 #include "Engine/Renderer/FrameResources.h"
@@ -46,22 +47,6 @@
 #include <stb_image_resize2.h>
 
 #define GLM_FORCE_DEFAULT_ALIGNED_GENTYPES
-constexpr uint32_t WIDTH                = 800;
-constexpr uint32_t HEIGHT               = 600;
-constexpr uint32_t PARTICLE_COUNT       = 8192;
-constexpr uint32_t COMPUTE_WORKGROUP_SIZE = 256;
-constexpr int      MAX_FRAMES_IN_FLIGHT = 2;
-const std::string  MODEL_PATH = "Models/viking_room.obj";
-const std::string  TEXTURE_PATH = "Textures/viking_room.png";
-const std::string  NORMAL_TEXTURE_PATH = "Textures/viking_room_normal.png";
-const std::string  METALLIC_ROUGHNESS_TEXTURE_PATH = "Textures/viking_room_metallic_roughness.png";
-
-#ifdef NDEBUG
-constexpr bool enableValidationLayers = false;
-#else
-constexpr bool enableValidationLayers = true;
-#endif
-
 struct Vertex
 {
 	glm::vec3 Position;
@@ -152,9 +137,12 @@ class VulkanGameEngineApplication
   private:
 	// Declared first so it is destroyed last: the Vulkan surface must not outlive
 	// the native window from which it was created.
-	Window                           window{WIDTH, HEIGHT, "Vulkan Game Engine"};
+	Window                           window{
+		ApplicationConfig::WindowWidth,
+		ApplicationConfig::WindowHeight,
+		ApplicationConfig::WindowTitle.data()};
 	ApplicationLoop                  Loop{window};
-	VulkanContext                    vulkan{window, enableValidationLayers};
+	VulkanContext                    vulkan{window, ApplicationConfig::EnableValidationLayers()};
 	// Temporary non-owning aliases while rendering still lives in this class.
 	// VulkanContext remains the sole owner of the handles.
 	vk::raii::PhysicalDevice&        physicalDevice = vulkan.physicalDevice();
@@ -168,7 +156,7 @@ class VulkanGameEngineApplication
 	const vk::Extent2D&              swapChainExtent = swapchainResources.extent();
 	const std::vector<vk::raii::ImageView>& swapChainImageViews = swapchainResources.imageViews();
 	RenderTargetResources            renderTargets{vulkan, swapchainResources};
-	ShadowMapResources               shadowMapResources{vulkan, MAX_FRAMES_IN_FLIGHT};
+	ShadowMapResources               shadowMapResources{vulkan, ApplicationConfig::MaxFramesInFlight};
 	vk::raii::Image&                 depthImage = renderTargets.depthImage();
 	vk::raii::ImageView&             depthImageView = renderTargets.depthImageView();
 	vk::raii::Image&                 colorImage = renderTargets.colorImage();
@@ -207,7 +195,7 @@ class VulkanGameEngineApplication
 	vk::raii::DescriptorPool computeDescriptorPool = nullptr;
 	std::vector<vk::raii::DescriptorSet> computeDescriptorSets;
 
-	FrameResources frameResources{vulkan, MAX_FRAMES_IN_FLIGHT, swapChainImages.size()};
+	FrameResources frameResources{vulkan, ApplicationConfig::MaxFramesInFlight, swapChainImages.size()};
 
 	const vk::SampleCountFlagBits msaaSamples = vulkan.msaaSamples();
 	std::chrono::steady_clock::time_point lastParticleUpdate = std::chrono::steady_clock::now();
@@ -223,18 +211,28 @@ class VulkanGameEngineApplication
 		createShadowGraphicsPipeline();
 		createParticleGraphicsPipeline();
 		createComputePipeline();
-		createTextureImage(textureResource, TEXTURE_PATH, vk::Format::eR8G8B8A8Srgb);
-		createTextureImage(normalMapResource, NORMAL_TEXTURE_PATH, vk::Format::eR8G8B8A8Unorm);
+		createTextureImage(
+			textureResource,
+			std::string(ApplicationConfig::BaseColorTexturePath),
+			vk::Format::eR8G8B8A8Srgb);
+		createTextureImage(
+			normalMapResource,
+			std::string(ApplicationConfig::NormalTexturePath),
+			vk::Format::eR8G8B8A8Unorm);
 		createTextureImage(
 			metallicRoughnessMapResource,
-			METALLIC_ROUGHNESS_TEXTURE_PATH,
+			std::string(ApplicationConfig::MetallicRoughnessTexturePath),
 			vk::Format::eR8G8B8A8Unorm);
 		materialResource.emplace(*textureResource, *normalMapResource, *metallicRoughnessMapResource);
 		loadModel();
 		createGeometryBuffer();
 		createParticleBuffers();
 		setupGameObjects();
-		MeshRendererInstance.emplace(vulkan, descriptorSetLayout, shadowMapResources, MAX_FRAMES_IN_FLIGHT);
+		MeshRendererInstance.emplace(
+			vulkan,
+			descriptorSetLayout,
+			shadowMapResources,
+			ApplicationConfig::MaxFramesInFlight);
 		MeshRendererInstance->Build(scene);
 		createComputeUniformBuffers();
 		createComputeDescriptorPool();
@@ -913,12 +911,13 @@ class VulkanGameEngineApplication
 
 	void loadModel()
 	{
+		const std::string modelPath(ApplicationConfig::ModelPath);
 		tinyobj::attrib_t                attrib;
 		std::vector<tinyobj::shape_t>    shapes;
 		std::vector<tinyobj::material_t> materials;
 		std::string                      warn, err;
 
-		if (!tinyobj::LoadObj(&attrib, &shapes, &materials, &warn, &err, MODEL_PATH.c_str()))
+		if (!tinyobj::LoadObj(&attrib, &shapes, &materials, &warn, &err, modelPath.c_str()))
 		{
 			throw std::runtime_error(warn + err);
 		}
@@ -1002,7 +1001,7 @@ class VulkanGameEngineApplication
 
 		if (vertices.empty() || indices.empty())
 		{
-			throw std::runtime_error("OBJ model contains no renderable geometry: " + MODEL_PATH);
+			throw std::runtime_error("OBJ model contains no renderable geometry: " + modelPath);
 		}
 
 		std::vector<glm::vec3> tangentSums(vertices.size(), glm::vec3(0.0f));
@@ -1060,7 +1059,7 @@ class VulkanGameEngineApplication
 		const std::size_t bytesBeforeDeduplication = expandedVertexCount * sizeof(Vertex);
 		const std::size_t bytesAfterDeduplication  = uniqueVertexCount * sizeof(Vertex);
 
-		std::clog << "[OBJ] Model: " << MODEL_PATH << '\n'
+		std::clog << "[OBJ] Model: " << modelPath << '\n'
 			      << "[OBJ] Vertex references: " << expandedVertexCount << '\n'
 			      << "[OBJ] Unique vertices: " << uniqueVertexCount << '\n'
 			      << "[OBJ] Duplicates removed: " << removedVertexCount
@@ -1108,12 +1107,14 @@ class VulkanGameEngineApplication
 	{
 		std::default_random_engine randomEngine(0xC0FFEEu);
 		std::uniform_real_distribution<float> random01(0.0f, 1.0f);
-		std::vector<Particle> particles(PARTICLE_COUNT);
+		std::vector<Particle> particles(ApplicationConfig::ParticleCount);
 		for (Particle& particle : particles)
 		{
 			const float radius = 0.25f * std::sqrt(random01(randomEngine));
 			const float angle = random01(randomEngine) * 2.0f * glm::pi<float>();
-			const float x = radius * std::cos(angle) * static_cast<float>(HEIGHT) / static_cast<float>(WIDTH);
+			const float x = radius * std::cos(angle) *
+				static_cast<float>(ApplicationConfig::WindowHeight) /
+				static_cast<float>(ApplicationConfig::WindowWidth);
 			const float y = radius * std::sin(angle);
 			particle.position = {x, y};
 			const glm::vec2 direction = glm::length(particle.position) > 0.0f
@@ -1134,8 +1135,8 @@ class VulkanGameEngineApplication
 		stagingBuffer.memory().unmapMemory();
 
 		particleBuffers.clear();
-		particleBuffers.reserve(MAX_FRAMES_IN_FLIGHT);
-		for (uint32_t frame = 0; frame < MAX_FRAMES_IN_FLIGHT; ++frame)
+		particleBuffers.reserve(ApplicationConfig::MaxFramesInFlight);
+		for (uint32_t frame = 0; frame < ApplicationConfig::MaxFramesInFlight; ++frame)
 		{
 			particleBuffers.emplace_back(
 				vulkan,
@@ -1198,9 +1199,9 @@ class VulkanGameEngineApplication
 		const vk::DeviceSize bufferSize = sizeof(ComputeUniformBufferObject);
 		computeUniformBuffersMapped.clear();
 		computeUniformBuffers.clear();
-		computeUniformBuffers.reserve(MAX_FRAMES_IN_FLIGHT);
-		computeUniformBuffersMapped.reserve(MAX_FRAMES_IN_FLIGHT);
-		for (uint32_t frame = 0; frame < MAX_FRAMES_IN_FLIGHT; ++frame)
+		computeUniformBuffers.reserve(ApplicationConfig::MaxFramesInFlight);
+		computeUniformBuffersMapped.reserve(ApplicationConfig::MaxFramesInFlight);
+		for (uint32_t frame = 0; frame < ApplicationConfig::MaxFramesInFlight; ++frame)
 		{
 			computeUniformBuffers.emplace_back(
 				vulkan,
@@ -1215,11 +1216,11 @@ class VulkanGameEngineApplication
 	void createComputeDescriptorPool()
 	{
 		std::array<vk::DescriptorPoolSize, 2> poolSizes{{
-			{.type = vk::DescriptorType::eUniformBuffer, .descriptorCount = MAX_FRAMES_IN_FLIGHT},
-			{.type = vk::DescriptorType::eStorageBuffer, .descriptorCount = MAX_FRAMES_IN_FLIGHT * 2}}};
+			{.type = vk::DescriptorType::eUniformBuffer, .descriptorCount = ApplicationConfig::MaxFramesInFlight},
+			{.type = vk::DescriptorType::eStorageBuffer, .descriptorCount = ApplicationConfig::MaxFramesInFlight * 2}}};
 		vk::DescriptorPoolCreateInfo poolInfo{
 			.flags = vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet,
-			.maxSets = MAX_FRAMES_IN_FLIGHT,
+			.maxSets = ApplicationConfig::MaxFramesInFlight,
 			.poolSizeCount = static_cast<uint32_t>(poolSizes.size()),
 			.pPoolSizes = poolSizes.data()};
 		computeDescriptorPool = vk::raii::DescriptorPool(device, poolInfo);
@@ -1227,17 +1228,18 @@ class VulkanGameEngineApplication
 
 	void createComputeDescriptorSets()
 	{
-		std::vector<vk::DescriptorSetLayout> layouts(MAX_FRAMES_IN_FLIGHT, *computeDescriptorSetLayout);
+		std::vector<vk::DescriptorSetLayout> layouts(ApplicationConfig::MaxFramesInFlight, *computeDescriptorSetLayout);
 		vk::DescriptorSetAllocateInfo allocateInfo{
 			.descriptorPool = computeDescriptorPool,
 			.descriptorSetCount = static_cast<uint32_t>(layouts.size()),
 			.pSetLayouts = layouts.data()};
 		computeDescriptorSets = device.allocateDescriptorSets(allocateInfo);
 
-		const vk::DeviceSize particleBufferSize = sizeof(Particle) * PARTICLE_COUNT;
-		for (uint32_t frame = 0; frame < MAX_FRAMES_IN_FLIGHT; ++frame)
+		const vk::DeviceSize particleBufferSize = sizeof(Particle) * ApplicationConfig::ParticleCount;
+		for (uint32_t frame = 0; frame < ApplicationConfig::MaxFramesInFlight; ++frame)
 		{
-			const uint32_t previousFrame = (frame + MAX_FRAMES_IN_FLIGHT - 1) % MAX_FRAMES_IN_FLIGHT;
+			const uint32_t previousFrame =
+				(frame + ApplicationConfig::MaxFramesInFlight - 1) % ApplicationConfig::MaxFramesInFlight;
 			vk::DescriptorBufferInfo uniformInfo{
 				.buffer = *computeUniformBuffers[frame].buffer(),
 				.offset = 0,
@@ -1281,7 +1283,11 @@ class VulkanGameEngineApplication
 			0,
 			*computeDescriptorSets[frameIndex],
 			{});
-		commandBuffer.dispatch((PARTICLE_COUNT + COMPUTE_WORKGROUP_SIZE - 1) / COMPUTE_WORKGROUP_SIZE, 1, 1);
+		commandBuffer.dispatch(
+			(ApplicationConfig::ParticleCount + ApplicationConfig::ComputeWorkgroupSize - 1) /
+				ApplicationConfig::ComputeWorkgroupSize,
+			1,
+			1);
 
 		vk::BufferMemoryBarrier2 particleBarrier{
 			.srcStageMask = vk::PipelineStageFlagBits2::eComputeShader,
@@ -1380,7 +1386,7 @@ class VulkanGameEngineApplication
 
 		commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, *particleGraphicsPipeline);
 		commandBuffer.bindVertexBuffers(0, *particleBuffers[frameIndex].buffer(), {0});
-		commandBuffer.draw(PARTICLE_COUNT, 1, 0, 0);
+		commandBuffer.draw(ApplicationConfig::ParticleCount, 1, 0, 0);
 		commandBuffer.endRendering();
 		// After rendering, transition the swapchain image to PRESENT_SRC
 		transition_image_layout(

@@ -164,6 +164,7 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Engine\Application\ApplicationLoop.h" />
+    <ClInclude Include="Engine\Application\ApplicationConfig.h" />
     <ClInclude Include="Engine\Application\DebugViewController.h" />
     <ClInclude Include="Engine\Platform\Window.h" />
     <ClInclude Include="Engine\Renderer\FrameResources.h" />

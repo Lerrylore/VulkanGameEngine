@@ -132,6 +132,9 @@
     <ClInclude Include="Engine\Application\ApplicationLoop.h">
       <Filter>Engine\Application</Filter>
     </ClInclude>
+    <ClInclude Include="Engine\Application\ApplicationConfig.h">
+      <Filter>Engine\Application</Filter>
+    </ClInclude>
     <ClInclude Include="Engine\Application\DebugViewController.h">
       <Filter>Engine\Application</Filter>
     </ClInclude>
