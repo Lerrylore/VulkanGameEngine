@@ -27,4 +27,13 @@ class ApplicationConfig final
 		return true;
 #endif
 	}
+
+	[[nodiscard]] static constexpr bool EnableHotReload() noexcept
+	{
+#ifdef NDEBUG
+		return false;
+#else
+		return true;
+#endif
+	}
 };

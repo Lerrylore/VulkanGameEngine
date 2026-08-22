@@ -30,3 +30,13 @@ void SingleTimeCommandExecutor::End(vk::raii::CommandBuffer&& commandBuffer) con
 	Vulkan.queue().submit(submitInfo, nullptr);
 	Vulkan.queue().waitIdle();
 }
+
+void SingleTimeCommandExecutor::CopyBuffer(
+	vk::raii::Buffer& source,
+	vk::raii::Buffer& destination,
+	vk::DeviceSize size) const
+{
+	vk::raii::CommandBuffer commandBuffer = Begin();
+	commandBuffer.copyBuffer(*source, *destination, vk::BufferCopy{.size = size});
+	End(std::move(commandBuffer));
+}

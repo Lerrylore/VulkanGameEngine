@@ -16,6 +16,10 @@ class SingleTimeCommandExecutor final
 
 	[[nodiscard]] vk::raii::CommandBuffer Begin() const;
 	void End(vk::raii::CommandBuffer&& commandBuffer) const;
+	void CopyBuffer(
+		vk::raii::Buffer& source,
+		vk::raii::Buffer& destination,
+		vk::DeviceSize size) const;
 
   private:
 	VulkanContext& Vulkan;

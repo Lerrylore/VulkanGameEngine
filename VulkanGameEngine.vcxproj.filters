@@ -73,7 +73,13 @@
     <ClCompile Include="Engine\Renderer\FrameResources.cpp">
       <Filter>Engine\Renderer</Filter>
     </ClCompile>
+    <ClCompile Include="Engine\Renderer\ForwardRenderer.cpp">
+      <Filter>Engine\Renderer</Filter>
+    </ClCompile>
     <ClCompile Include="Engine\Renderer\MeshRenderer.cpp">
+      <Filter>Engine\Renderer</Filter>
+    </ClCompile>
+    <ClCompile Include="Engine\Renderer\ParticleSystem.cpp">
       <Filter>Engine\Renderer</Filter>
     </ClCompile>
     <ClCompile Include="Engine\Resources\ImageAllocation.cpp">
@@ -104,6 +110,9 @@
       <Filter>Engine\Resources</Filter>
     </ClCompile>
     <ClCompile Include="Engine\Resources\ResourceManager.cpp">
+      <Filter>Engine\Resources</Filter>
+    </ClCompile>
+    <ClCompile Include="Engine\Resources\ResourceManagerSelfTest.cpp">
       <Filter>Engine\Resources</Filter>
     </ClCompile>
     <ClCompile Include="Engine\Resources\ResourceStreamingManager.cpp">
@@ -180,7 +189,13 @@
     <ClInclude Include="Engine\Renderer\FrameResources.h">
       <Filter>Engine\Renderer</Filter>
     </ClInclude>
+    <ClInclude Include="Engine\Renderer\ForwardRenderer.h">
+      <Filter>Engine\Renderer</Filter>
+    </ClInclude>
     <ClInclude Include="Engine\Renderer\MeshRenderer.h">
+      <Filter>Engine\Renderer</Filter>
+    </ClInclude>
+    <ClInclude Include="Engine\Renderer\ParticleSystem.h">
       <Filter>Engine\Renderer</Filter>
     </ClInclude>
     <ClInclude Include="Engine\Resources\ImageAllocation.h">
@@ -211,6 +226,9 @@
       <Filter>Engine\Resources</Filter>
     </ClInclude>
     <ClInclude Include="Engine\Resources\ResourceManager.h">
+      <Filter>Engine\Resources</Filter>
+    </ClInclude>
+    <ClInclude Include="Engine\Resources\ResourceManagerSelfTest.h">
       <Filter>Engine\Resources</Filter>
     </ClInclude>
     <ClInclude Include="Engine\Resources\ResourceStreamingManager.h">

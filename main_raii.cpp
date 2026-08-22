@@ -26,7 +26,9 @@
 #include "Engine/Application/DebugViewController.h"
 #include "Engine/Platform/Window.h"
 #include "Engine/Renderer/FrameResources.h"
+#include "Engine/Renderer/ForwardRenderer.h"
 #include "Engine/Renderer/MeshRenderer.h"
+#include "Engine/Renderer/ParticleSystem.h"
 #include "Engine/Renderer/RenderTargetResources.h"
 #include "Engine/Renderer/ShadowMapResources.h"
 #include "Engine/Renderer/SwapchainResources.h"
@@ -37,6 +39,7 @@
 #include "Engine/Resources/MaterialResource.h"
 #include "Engine/Resources/MeshResource.h"
 #include "Engine/Resources/ResourceManager.h"
+#include "Engine/Resources/ResourceManagerSelfTest.h"
 #include "Engine/Resources/ShaderResource.h"
 #include "Engine/Resources/HotReloadResourceManager.h"
 #include "Engine/Resources/ResourceStreamingManager.h"
@@ -109,30 +112,6 @@ struct VertexHash
 	}
 };
 
-struct alignas(16) ComputeUniformBufferObject
-{
-	float deltaTime = 0.0f;
-};
-
-struct Particle
-{
-	glm::vec2 position;
-	glm::vec2 velocity;
-	glm::vec4 color;
-
-	static vk::VertexInputBindingDescription getBindingDescription()
-	{
-		return {.binding = 0, .stride = sizeof(Particle), .inputRate = vk::VertexInputRate::eVertex};
-	}
-
-	static std::array<vk::VertexInputAttributeDescription, 2> getAttributeDescriptions()
-	{
-		return {{
-			{.location = 0, .binding = 0, .format = vk::Format::eR32G32Sfloat, .offset = offsetof(Particle, position)},
-			{.location = 1, .binding = 0, .format = vk::Format::eR32G32B32A32Sfloat, .offset = offsetof(Particle, color)}}};
-	}
-};
-
 class VulkanGameEngineApplication
 {
   public:
@@ -188,12 +167,6 @@ class VulkanGameEngineApplication
 	vk::raii::Pipeline       graphicsPipeline = nullptr;
 	vk::raii::PipelineLayout shadowPipelineLayout = nullptr;
 	vk::raii::Pipeline       shadowGraphicsPipeline = nullptr;
-	vk::raii::PipelineLayout particlePipelineLayout = nullptr;
-	vk::raii::Pipeline       particleGraphicsPipeline = nullptr;
-
-	vk::raii::DescriptorSetLayout computeDescriptorSetLayout = nullptr;
-	vk::raii::PipelineLayout      computePipelineLayout = nullptr;
-	vk::raii::Pipeline            computePipeline = nullptr;
 	std::unordered_map<std::string, std::function<void()>> ResourceReloadCallbacks;
 
 	ResourceHandle<MeshResource> meshResource;
@@ -201,10 +174,6 @@ class VulkanGameEngineApplication
 	ResourceHandle<TextureResource> normalMapResource;
 	ResourceHandle<TextureResource> metallicRoughnessMapResource;
 	ResourceHandle<MaterialResource> materialResource;
-
-	std::vector<BufferAllocation> particleBuffers;
-	std::vector<BufferAllocation> computeUniformBuffers;
-	std::vector<void*>            computeUniformBuffersMapped;
 
 	EventBus Events;
 	ServiceLocator Services;
@@ -214,27 +183,36 @@ class VulkanGameEngineApplication
 	DebugViewMode CurrentDebugView = DebugViewMode::Lit;
 	// Declared after Scene and its resources so it is destroyed before them.
 	std::optional<MeshRenderer> MeshRendererInstance;
-	vk::raii::DescriptorPool computeDescriptorPool = nullptr;
-	std::vector<vk::raii::DescriptorSet> computeDescriptorSets;
 
 	FrameResources frameResources{vulkan, ApplicationConfig::MaxFramesInFlight, swapChainImages.size()};
 	SingleTimeCommandExecutor SingleTimeCommands{vulkan, frameResources.commandPool()};
+	std::optional<ParticleSystem> ParticleSystemInstance;
+	std::optional<ForwardRenderer> ForwardRendererInstance;
 
 	const vk::SampleCountFlagBits msaaSamples = vulkan.msaaSamples();
-	std::chrono::steady_clock::time_point lastParticleUpdate = std::chrono::steady_clock::now();
+	std::vector<std::byte> StreamedShaderBinary;
+	bool StreamingCompleted = false;
 
 	std::vector<Vertex>    vertices;
 	std::vector<uint32_t>  indices;
 
 	void initVulkan()
 	{
+		const auto resourceTest = ResourceManagerSelfTest::Run();
+		if (!resourceTest.Passed)
+		{
+			for (const auto& failure : resourceTest.Failures)
+			{
+				std::clog << "[ResourceManagerSelfTest] " << failure << '\n';
+			}
+			throw std::runtime_error("resource manager self-test failed");
+		}
+		std::clog << "[ResourceManagerSelfTest] passed\n";
+
 		loadShaderResources();
 		createDescriptorSetLayout();
-		createComputeDescriptorSetLayout();
 		createGraphicsPipeline();
 		createShadowGraphicsPipeline();
-		createParticleGraphicsPipeline();
-		createComputePipeline();
 		textureResource = createTextureImage(
 			"viking_room_base_color",
 			std::string(ApplicationConfig::BaseColorTexturePath),
@@ -260,7 +238,6 @@ class VulkanGameEngineApplication
 		}
 		loadModel();
 		createGeometryBuffer();
-		createParticleBuffers();
 		setupGameObjects();
 		MeshRendererInstance.emplace(
 			vulkan,
@@ -268,11 +245,28 @@ class VulkanGameEngineApplication
 			shadowMapResources,
 			ApplicationConfig::MaxFramesInFlight);
 		MeshRendererInstance->Build(scene);
-		createComputeUniformBuffers();
-		createComputeDescriptorPool();
-		createComputeDescriptorSets();
+		ParticleSystemInstance.emplace(
+			vulkan,
+			frameResources,
+			SingleTimeCommands,
+			swapChainSurfaceFormat.format,
+			renderTargets.depthFormat(),
+			msaaSamples,
+			ParticleSystemConfig{
+				.ParticleCount = ApplicationConfig::ParticleCount,
+				.ComputeWorkgroupSize = ApplicationConfig::ComputeWorkgroupSize,
+				.MaxFramesInFlight = ApplicationConfig::MaxFramesInFlight,
+				.InitialAspectRatio = static_cast<float>(ApplicationConfig::WindowHeight) /
+					static_cast<float>(ApplicationConfig::WindowWidth)});
+		ParticleSystemInstance->Initialize(ParticleShader->module(), ComputeShader->module());
+		ForwardRendererInstance.emplace(
+			swapchainResources,
+			renderTargets,
+			shadowMapResources,
+			*MeshRendererInstance);
 		scene.Initialize();
 		startAsyncResourceLoad();
+		startStreamingResourceLoad();
 		DebugViewController::PrintHelp();
 	}
 
@@ -296,23 +290,30 @@ class VulkanGameEngineApplication
 			throw std::runtime_error("failed to load one or more shader resources");
 		}
 
-		HotReload.Watch(MainShader, "Shaders/slang.spv");
-		HotReload.Watch(ParticleShader, "Shaders/particles.spv");
-		HotReload.Watch(ComputeShader, "Shaders/compute.spv");
+		if constexpr (ApplicationConfig::EnableHotReload())
+		{
+			HotReload.Watch(MainShader, "Shaders/slang.spv");
+			HotReload.Watch(ParticleShader, "Shaders/particles.spv");
+			HotReload.Watch(ComputeShader, "Shaders/compute.spv");
 
-		ResourceReloadCallbacks.emplace("slang", [this]()
-		{
-			createGraphicsPipeline();
-			createShadowGraphicsPipeline();
-		});
-		ResourceReloadCallbacks.emplace("particles", [this]()
-		{
-			createParticleGraphicsPipeline();
-		});
-		ResourceReloadCallbacks.emplace("compute", [this]()
-		{
-			createComputePipeline();
-		});
+			ResourceReloadCallbacks.emplace("slang", [this]()
+			{
+				createGraphicsPipeline();
+				createShadowGraphicsPipeline();
+			});
+			ResourceReloadCallbacks.emplace("particles", [this]()
+			{
+				ParticleSystemInstance->RebuildGraphicsPipeline(
+					ParticleShader->module(),
+					swapChainSurfaceFormat.format,
+					renderTargets.depthFormat(),
+					msaaSamples);
+			});
+			ResourceReloadCallbacks.emplace("compute", [this]()
+			{
+				ParticleSystemInstance->RebuildComputePipeline(ComputeShader->module());
+			});
+		}
 	}
 
 	void startAsyncResourceLoad()
@@ -333,11 +334,60 @@ class VulkanGameEngineApplication
 			});
 	}
 
+	void startStreamingResourceLoad()
+	{
+		requestNextStreamingChunk(0);
+	}
+
+	void requestNextStreamingChunk(uint32_t chunkIndex)
+	{
+		constexpr uint32_t chunkSize = 4096;
+		Streaming.RequestFileChunk(
+			"slang_stream",
+			"Shaders/slang.spv",
+			chunkIndex,
+			chunkSize,
+			1,
+			[this](ResourceStreamingManager::ChunkResult result)
+			{
+				if (!result.Succeeded())
+				{
+					std::clog << "[Streaming] chunk " << result.Data.ChunkIndex
+						<< " failed: " << result.Error << '\n';
+					return;
+				}
+
+				const std::size_t requiredSize = static_cast<std::size_t>(result.Data.Offset) +
+					result.Data.Bytes.size();
+				if (StreamedShaderBinary.size() < requiredSize)
+				{
+					StreamedShaderBinary.resize(requiredSize);
+				}
+				std::copy(
+					result.Data.Bytes.begin(),
+					result.Data.Bytes.end(),
+					StreamedShaderBinary.begin() + static_cast<std::ptrdiff_t>(result.Data.Offset));
+				std::clog << "[Streaming] loaded chunk " << result.Data.ChunkIndex
+					<< " (" << result.Data.Bytes.size() << " bytes)\n";
+
+				if (result.Data.IsFinalChunk)
+				{
+					StreamingCompleted = true;
+					std::clog << "[Streaming] SPIR-V CPU stream completed ("
+						<< StreamedShaderBinary.size() << " bytes)\n";
+					return;
+				}
+
+				requestNextStreamingChunk(result.Data.ChunkIndex + 1);
+			});
+	}
+
 	void mainLoop()
 	{
 		Loop.Run([this](float deltaTime)
 		{
 			DebugViewController::Update(window, CurrentDebugView);
+			Streaming.Process(1);
 			{
 				std::lock_guard lock(AsyncResultMutex);
 				if (AsyncShaderCompleted && !AsyncShaderReported)
@@ -348,24 +398,27 @@ class VulkanGameEngineApplication
 					AsyncShaderReported = true;
 				}
 			}
-			const auto reloadedResources = HotReload.Poll();
-			if (!reloadedResources.empty())
+			if constexpr (ApplicationConfig::EnableHotReload())
 			{
-				// A pipeline keeps the shader code it was created from. Rebuild after
-				// the module reload, and wait until old frame work has completed.
-				device.waitIdle();
-				for (const auto& resource : reloadedResources)
+				const auto reloadedResources = HotReload.Poll();
+				if (!reloadedResources.empty())
 				{
-					std::clog << "[HotReload] Reloaded " << resource.ResourceId << '\n';
-					const auto callback = ResourceReloadCallbacks.find(resource.ResourceId);
-					if (callback != ResourceReloadCallbacks.end())
+					// A pipeline keeps the shader code it was created from. Rebuild after
+					// the module reload, and wait until old frame work has completed.
+					device.waitIdle();
+					for (const auto& resource : reloadedResources)
 					{
-						callback->second();
+						std::clog << "[HotReload] Reloaded " << resource.ResourceId << '\n';
+						const auto callback = ResourceReloadCallbacks.find(resource.ResourceId);
+						if (callback != ResourceReloadCallbacks.end())
+						{
+							callback->second();
+						}
 					}
 				}
 			}
 			scene.Update(deltaTime);
-			drawFrame();
+			drawFrame(deltaTime);
 		});
 
 		device.waitIdle();
@@ -394,20 +447,12 @@ class VulkanGameEngineApplication
 		if (formatChanged)
 		{
 			createGraphicsPipeline();
-			createParticleGraphicsPipeline();
+			ParticleSystemInstance->RebuildGraphicsPipeline(
+				ParticleShader->module(),
+				swapChainSurfaceFormat.format,
+				renderTargets.depthFormat(),
+				msaaSamples);
 		}
-	}
-
-	void createComputeDescriptorSetLayout()
-	{
-		std::array<vk::DescriptorSetLayoutBinding, 3> bindings{{
-			{.binding = 0, .descriptorType = vk::DescriptorType::eUniformBuffer, .descriptorCount = 1, .stageFlags = vk::ShaderStageFlagBits::eCompute},
-			{.binding = 1, .descriptorType = vk::DescriptorType::eStorageBuffer, .descriptorCount = 1, .stageFlags = vk::ShaderStageFlagBits::eCompute},
-			{.binding = 2, .descriptorType = vk::DescriptorType::eStorageBuffer, .descriptorCount = 1, .stageFlags = vk::ShaderStageFlagBits::eCompute}}};
-		vk::DescriptorSetLayoutCreateInfo layoutInfo{
-			.bindingCount = static_cast<uint32_t>(bindings.size()),
-			.pBindings = bindings.data()};
-		computeDescriptorSetLayout = vk::raii::DescriptorSetLayout(device, layoutInfo);
 	}
 
 	void createGraphicsPipeline()
@@ -538,88 +583,6 @@ class VulkanGameEngineApplication
 			device,
 			nullptr,
 			pipelineChain.get<vk::GraphicsPipelineCreateInfo>());
-	}
-
-	void createParticleGraphicsPipeline()
-	{
-		std::array shaderStages{
-			vk::PipelineShaderStageCreateInfo{.stage = vk::ShaderStageFlagBits::eVertex, .module = ParticleShader->module(), .pName = "particleVertMain"},
-			vk::PipelineShaderStageCreateInfo{.stage = vk::ShaderStageFlagBits::eFragment, .module = ParticleShader->module(), .pName = "particleFragMain"}};
-
-		auto bindingDescription = Particle::getBindingDescription();
-		auto attributeDescriptions = Particle::getAttributeDescriptions();
-		vk::PipelineVertexInputStateCreateInfo vertexInputInfo{
-			.vertexBindingDescriptionCount = 1,
-			.pVertexBindingDescriptions = &bindingDescription,
-			.vertexAttributeDescriptionCount = static_cast<uint32_t>(attributeDescriptions.size()),
-			.pVertexAttributeDescriptions = attributeDescriptions.data()};
-		vk::PipelineInputAssemblyStateCreateInfo inputAssembly{.topology = vk::PrimitiveTopology::ePointList};
-		vk::PipelineViewportStateCreateInfo viewportState{.viewportCount = 1, .scissorCount = 1};
-		vk::PipelineRasterizationStateCreateInfo rasterizer{
-			.depthClampEnable = vk::False,
-			.rasterizerDiscardEnable = vk::False,
-			.polygonMode = vk::PolygonMode::eFill,
-			.cullMode = vk::CullModeFlagBits::eNone,
-			.frontFace = vk::FrontFace::eCounterClockwise,
-			.lineWidth = 1.0f};
-		vk::PipelineMultisampleStateCreateInfo multisampling{
-			.rasterizationSamples = msaaSamples,
-			.sampleShadingEnable = vk::True,
-			.minSampleShading = 0.2f};
-		vk::PipelineDepthStencilStateCreateInfo depthStencil{
-			.depthTestEnable = vk::False,
-			.depthWriteEnable = vk::False,
-			.depthCompareOp = vk::CompareOp::eAlways};
-		vk::PipelineColorBlendAttachmentState colorBlendAttachment{
-			.blendEnable = vk::True,
-			.srcColorBlendFactor = vk::BlendFactor::eSrcAlpha,
-			.dstColorBlendFactor = vk::BlendFactor::eOneMinusSrcAlpha,
-			.colorBlendOp = vk::BlendOp::eAdd,
-			.srcAlphaBlendFactor = vk::BlendFactor::eOne,
-			.dstAlphaBlendFactor = vk::BlendFactor::eOneMinusSrcAlpha,
-			.alphaBlendOp = vk::BlendOp::eAdd,
-			.colorWriteMask = vk::ColorComponentFlagBits::eR | vk::ColorComponentFlagBits::eG |
-				vk::ColorComponentFlagBits::eB | vk::ColorComponentFlagBits::eA};
-		vk::PipelineColorBlendStateCreateInfo colorBlending{
-			.attachmentCount = 1,
-			.pAttachments = &colorBlendAttachment};
-		std::array dynamicStates{vk::DynamicState::eViewport, vk::DynamicState::eScissor};
-		vk::PipelineDynamicStateCreateInfo dynamicState{
-			.dynamicStateCount = static_cast<uint32_t>(dynamicStates.size()),
-			.pDynamicStates = dynamicStates.data()};
-
-		particlePipelineLayout = vk::raii::PipelineLayout(device, vk::PipelineLayoutCreateInfo{});
-		vk::StructureChain<vk::GraphicsPipelineCreateInfo, vk::PipelineRenderingCreateInfo> pipelineChain{
-			{.stageCount = static_cast<uint32_t>(shaderStages.size()),
-			 .pStages = shaderStages.data(),
-			 .pVertexInputState = &vertexInputInfo,
-			 .pInputAssemblyState = &inputAssembly,
-			 .pViewportState = &viewportState,
-			 .pRasterizationState = &rasterizer,
-			 .pMultisampleState = &multisampling,
-			 .pDepthStencilState = &depthStencil,
-			 .pColorBlendState = &colorBlending,
-			 .pDynamicState = &dynamicState,
-			 .layout = particlePipelineLayout,
-			 .renderPass = nullptr},
-			{.colorAttachmentCount = 1,
-			 .pColorAttachmentFormats = &swapChainSurfaceFormat.format,
-			 .depthAttachmentFormat = renderTargets.depthFormat()}};
-		particleGraphicsPipeline = vk::raii::Pipeline(device, nullptr, pipelineChain.get<vk::GraphicsPipelineCreateInfo>());
-	}
-
-	void createComputePipeline()
-	{
-		vk::PipelineShaderStageCreateInfo shaderStage{
-			.stage = vk::ShaderStageFlagBits::eCompute,
-			.module = ComputeShader->module(),
-			.pName = "compMain"};
-		vk::PipelineLayoutCreateInfo layoutInfo{
-			.setLayoutCount = 1,
-			.pSetLayouts = &*computeDescriptorSetLayout};
-		computePipelineLayout = vk::raii::PipelineLayout(device, layoutInfo);
-		vk::ComputePipelineCreateInfo pipelineInfo{.stage = shaderStage, .layout = computePipelineLayout};
-		computePipeline = vk::raii::Pipeline(device, nullptr, pipelineInfo);
 	}
 
 	ResourceHandle<TextureResource> createTextureImage(
@@ -1204,50 +1167,6 @@ class VulkanGameEngineApplication
 		}
 	}
 
-	void createParticleBuffers()
-	{
-		std::default_random_engine randomEngine(0xC0FFEEu);
-		std::uniform_real_distribution<float> random01(0.0f, 1.0f);
-		std::vector<Particle> particles(ApplicationConfig::ParticleCount);
-		for (Particle& particle : particles)
-		{
-			const float radius = 0.25f * std::sqrt(random01(randomEngine));
-			const float angle = random01(randomEngine) * 2.0f * glm::pi<float>();
-			const float x = radius * std::cos(angle) *
-				static_cast<float>(ApplicationConfig::WindowHeight) /
-				static_cast<float>(ApplicationConfig::WindowWidth);
-			const float y = radius * std::sin(angle);
-			particle.position = {x, y};
-			const glm::vec2 direction = glm::length(particle.position) > 0.0f
-				? glm::normalize(particle.position)
-				: glm::vec2(1.0f, 0.0f);
-			particle.velocity = direction * 0.25f;
-			particle.color = {random01(randomEngine), random01(randomEngine), random01(randomEngine), 1.0f};
-		}
-
-		const vk::DeviceSize bufferSize = sizeof(Particle) * particles.size();
-		BufferAllocation stagingBuffer{
-			vulkan,
-			bufferSize,
-			vk::BufferUsageFlagBits::eTransferSrc,
-			vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent};
-		void* mapped = stagingBuffer.memory().mapMemory(0, bufferSize);
-		memcpy(mapped, particles.data(), static_cast<std::size_t>(bufferSize));
-		stagingBuffer.memory().unmapMemory();
-
-		particleBuffers.clear();
-		particleBuffers.reserve(ApplicationConfig::MaxFramesInFlight);
-		for (uint32_t frame = 0; frame < ApplicationConfig::MaxFramesInFlight; ++frame)
-		{
-			particleBuffers.emplace_back(
-				vulkan,
-				bufferSize,
-				vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eVertexBuffer | vk::BufferUsageFlagBits::eTransferDst,
-				vk::MemoryPropertyFlagBits::eDeviceLocal);
-			copyBuffer(stagingBuffer.buffer(), particleBuffers.back().buffer(), bufferSize);
-		}
-	}
-
 	void setupGameObjects()
 	{
 		assert(meshResource);
@@ -1295,119 +1214,30 @@ class VulkanGameEngineApplication
 		ActiveCamera->SetClipPlanes(0.1f, 10.0f);
 	}
 
-	void createComputeUniformBuffers()
-	{
-		const vk::DeviceSize bufferSize = sizeof(ComputeUniformBufferObject);
-		computeUniformBuffersMapped.clear();
-		computeUniformBuffers.clear();
-		computeUniformBuffers.reserve(ApplicationConfig::MaxFramesInFlight);
-		computeUniformBuffersMapped.reserve(ApplicationConfig::MaxFramesInFlight);
-		for (uint32_t frame = 0; frame < ApplicationConfig::MaxFramesInFlight; ++frame)
-		{
-			computeUniformBuffers.emplace_back(
-				vulkan,
-				bufferSize,
-				vk::BufferUsageFlagBits::eUniformBuffer,
-				vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent);
-			computeUniformBuffersMapped.emplace_back(
-				computeUniformBuffers.back().memory().mapMemory(0, bufferSize));
-		}
-	}
-
-	void createComputeDescriptorPool()
-	{
-		std::array<vk::DescriptorPoolSize, 2> poolSizes{{
-			{.type = vk::DescriptorType::eUniformBuffer, .descriptorCount = ApplicationConfig::MaxFramesInFlight},
-			{.type = vk::DescriptorType::eStorageBuffer, .descriptorCount = ApplicationConfig::MaxFramesInFlight * 2}}};
-		vk::DescriptorPoolCreateInfo poolInfo{
-			.flags = vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet,
-			.maxSets = ApplicationConfig::MaxFramesInFlight,
-			.poolSizeCount = static_cast<uint32_t>(poolSizes.size()),
-			.pPoolSizes = poolSizes.data()};
-		computeDescriptorPool = vk::raii::DescriptorPool(device, poolInfo);
-	}
-
-	void createComputeDescriptorSets()
-	{
-		std::vector<vk::DescriptorSetLayout> layouts(ApplicationConfig::MaxFramesInFlight, *computeDescriptorSetLayout);
-		vk::DescriptorSetAllocateInfo allocateInfo{
-			.descriptorPool = computeDescriptorPool,
-			.descriptorSetCount = static_cast<uint32_t>(layouts.size()),
-			.pSetLayouts = layouts.data()};
-		computeDescriptorSets = device.allocateDescriptorSets(allocateInfo);
-
-		const vk::DeviceSize particleBufferSize = sizeof(Particle) * ApplicationConfig::ParticleCount;
-		for (uint32_t frame = 0; frame < ApplicationConfig::MaxFramesInFlight; ++frame)
-		{
-			const uint32_t previousFrame =
-				(frame + ApplicationConfig::MaxFramesInFlight - 1) % ApplicationConfig::MaxFramesInFlight;
-			vk::DescriptorBufferInfo uniformInfo{
-				.buffer = *computeUniformBuffers[frame].buffer(),
-				.offset = 0,
-				.range = sizeof(ComputeUniformBufferObject)};
-			vk::DescriptorBufferInfo inputInfo{
-				.buffer = *particleBuffers[previousFrame].buffer(),
-				.offset = 0,
-				.range = particleBufferSize};
-			vk::DescriptorBufferInfo outputInfo{
-				.buffer = *particleBuffers[frame].buffer(),
-				.offset = 0,
-				.range = particleBufferSize};
-
-			std::array<vk::WriteDescriptorSet, 3> writes{{
-				{.dstSet = computeDescriptorSets[frame], .dstBinding = 0, .descriptorCount = 1,
-				 .descriptorType = vk::DescriptorType::eUniformBuffer, .pBufferInfo = &uniformInfo},
-				{.dstSet = computeDescriptorSets[frame], .dstBinding = 1, .descriptorCount = 1,
-				 .descriptorType = vk::DescriptorType::eStorageBuffer, .pBufferInfo = &inputInfo},
-				{.dstSet = computeDescriptorSets[frame], .dstBinding = 2, .descriptorCount = 1,
-				 .descriptorType = vk::DescriptorType::eStorageBuffer, .pBufferInfo = &outputInfo}}};
-			device.updateDescriptorSets(writes, {});
-		}
-	}
-
 	void copyBuffer(vk::raii::Buffer& srcBuffer, vk::raii::Buffer& dstBuffer, vk::DeviceSize size)
 	{
-		vk::raii::CommandBuffer commandCopyBuffer = SingleTimeCommands.Begin();
-		commandCopyBuffer.copyBuffer(*srcBuffer, *dstBuffer, vk::BufferCopy{ .size = size });
-		SingleTimeCommands.End(std::move(commandCopyBuffer));
-	}
-
-	void recordComputeCommandBuffer()
-	{
-		const uint32_t frameIndex = frameResources.currentFrame();
-		auto& commandBuffer = frameResources.computeCommandBuffer(frameIndex);
-		commandBuffer.begin({});
-		commandBuffer.bindPipeline(vk::PipelineBindPoint::eCompute, *computePipeline);
-		commandBuffer.bindDescriptorSets(
-			vk::PipelineBindPoint::eCompute,
-			*computePipelineLayout,
-			0,
-			*computeDescriptorSets[frameIndex],
-			{});
-		commandBuffer.dispatch(
-			(ApplicationConfig::ParticleCount + ApplicationConfig::ComputeWorkgroupSize - 1) /
-				ApplicationConfig::ComputeWorkgroupSize,
-			1,
-			1);
-
-		vk::BufferMemoryBarrier2 particleBarrier{
-			.srcStageMask = vk::PipelineStageFlagBits2::eComputeShader,
-			.srcAccessMask = vk::AccessFlagBits2::eShaderWrite,
-			.dstStageMask = vk::PipelineStageFlagBits2::eComputeShader | vk::PipelineStageFlagBits2::eVertexInput,
-			.dstAccessMask = vk::AccessFlagBits2::eShaderRead | vk::AccessFlagBits2::eVertexAttributeRead,
-			.srcQueueFamilyIndex = vk::QueueFamilyIgnored,
-			.dstQueueFamilyIndex = vk::QueueFamilyIgnored,
-			.buffer = *particleBuffers[frameIndex].buffer(),
-			.offset = 0,
-			.size = vk::WholeSize};
-		vk::DependencyInfo particleDependency{
-			.bufferMemoryBarrierCount = 1,
-			.pBufferMemoryBarriers = &particleBarrier};
-		commandBuffer.pipelineBarrier2(particleDependency);
-		commandBuffer.end();
+		SingleTimeCommands.CopyBuffer(srcBuffer, dstBuffer, size);
 	}
 
 	void recordCommandBuffer(uint32_t imageIndex)
+	{
+		const uint32_t frameIndex = frameResources.currentFrame();
+		ForwardRendererInstance->Record(
+			frameResources.graphicsCommandBuffer(frameIndex),
+			imageIndex,
+			frameIndex,
+			graphicsPipeline,
+			pipelineLayout,
+			shadowGraphicsPipeline,
+			shadowPipelineLayout,
+			[this](vk::raii::CommandBuffer& commandBuffer, uint32_t particleFrame)
+			{
+				ParticleSystemInstance->RecordDraw(commandBuffer, particleFrame);
+			});
+	}
+
+#if 0 // Legacy frame recorder retained temporarily as a learning reference.
+	void legacyRecordCommandBuffer(uint32_t imageIndex)
 	{
 		const uint32_t frameIndex = frameResources.currentFrame();
 		auto &commandBuffer = frameResources.graphicsCommandBuffer(frameIndex);
@@ -1594,7 +1424,9 @@ class VulkanGameEngineApplication
 		frameResources.graphicsCommandBuffer(frameResources.currentFrame()).pipelineBarrier2(dependency_info);
 	}
 
-	void drawFrame()
+	#endif
+
+	void drawFrame(float deltaTime)
 	{
 		const uint32_t frameIndex = frameResources.currentFrame();
 		// Per-frame resources use frameIndex; render-finished semaphores use the
@@ -1626,10 +1458,10 @@ class VulkanGameEngineApplication
 		device.resetFences(*frameResources.inFlightFence(frameIndex));
 
 		updateUniformBuffer(frameIndex);
-		updateComputeUniformBuffer(frameIndex);
+		ParticleSystemInstance->Update(frameIndex, deltaTime);
 
 		frameResources.computeCommandBuffer(frameIndex).reset();
-		recordComputeCommandBuffer();
+		ParticleSystemInstance->RecordComputeCommandBuffer(frameIndex);
 		const vk::SubmitInfo computeSubmitInfo{
 			.commandBufferCount = 1,
 			.pCommandBuffers = &*frameResources.computeCommandBuffer(frameIndex),
@@ -1675,18 +1507,6 @@ class VulkanGameEngineApplication
 			assert(result == vk::Result::eSuccess);
 		}
 		frameResources.advanceFrame();
-	}
-
-	void updateComputeUniformBuffer(uint32_t currentFrame)
-	{
-		const auto now = std::chrono::steady_clock::now();
-		const float deltaTime = std::clamp(
-			std::chrono::duration<float>(now - lastParticleUpdate).count(),
-			0.0f,
-			0.05f);
-		lastParticleUpdate = now;
-		const ComputeUniformBufferObject computeUbo{.deltaTime = deltaTime};
-		memcpy(computeUniformBuffersMapped[currentFrame], &computeUbo, sizeof(computeUbo));
 	}
 
 	void updateUniformBuffer(uint32_t currentImage)

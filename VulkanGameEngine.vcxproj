@@ -137,7 +137,9 @@
     <ClCompile Include="main_raii.cpp" />
     <ClCompile Include="Engine\Platform\Window.cpp" />
     <ClCompile Include="Engine\Renderer\FrameResources.cpp" />
+    <ClCompile Include="Engine\Renderer\ForwardRenderer.cpp" />
     <ClCompile Include="Engine\Renderer\MeshRenderer.cpp" />
+    <ClCompile Include="Engine\Renderer\ParticleSystem.cpp" />
     <ClCompile Include="Engine\Renderer\RenderTargetResources.cpp" />
     <ClCompile Include="Engine\Renderer\ShadowMapResources.cpp" />
     <ClCompile Include="Engine\Renderer\SwapchainResources.cpp" />
@@ -151,6 +153,7 @@
     <ClCompile Include="Engine\Resources\MeshResource.cpp" />
     <ClCompile Include="Engine\Resources\Resource.cpp" />
     <ClCompile Include="Engine\Resources\ResourceManager.cpp" />
+    <ClCompile Include="Engine\Resources\ResourceManagerSelfTest.cpp" />
     <ClCompile Include="Engine\Resources\ResourceStreamingManager.cpp" />
     <ClCompile Include="Engine\Resources\ShaderResource.cpp" />
     <ClCompile Include="Engine\Resources\TextureResource.cpp" />
@@ -178,7 +181,9 @@
     <ClInclude Include="Engine\Application\DebugViewController.h" />
     <ClInclude Include="Engine\Platform\Window.h" />
     <ClInclude Include="Engine\Renderer\FrameResources.h" />
+    <ClInclude Include="Engine\Renderer\ForwardRenderer.h" />
     <ClInclude Include="Engine\Renderer\MeshRenderer.h" />
+    <ClInclude Include="Engine\Renderer\ParticleSystem.h" />
     <ClInclude Include="Engine\Renderer\RenderTargetResources.h" />
     <ClInclude Include="Engine\Renderer\ShadowMapResources.h" />
     <ClInclude Include="Engine\Renderer\SwapchainResources.h" />
@@ -192,6 +197,7 @@
     <ClInclude Include="Engine\Resources\MeshResource.h" />
     <ClInclude Include="Engine\Resources\Resource.h" />
     <ClInclude Include="Engine\Resources\ResourceManager.h" />
+    <ClInclude Include="Engine\Resources\ResourceManagerSelfTest.h" />
     <ClInclude Include="Engine\Resources\ResourceStreamingManager.h" />
     <ClInclude Include="Engine\Resources\ShaderResource.h" />
     <ClInclude Include="Engine\Resources\TextureResource.h" />
