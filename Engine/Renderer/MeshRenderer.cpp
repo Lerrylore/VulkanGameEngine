@@ -34,6 +34,7 @@ struct MeshUniformBufferObject
 	glm::vec4 CameraPosition;
 	glm::vec4 MaterialMetallicRoughness;
 	glm::vec4 DebugView;
+	glm::vec4 ShadowMapParameters;
 };
 }
 
@@ -274,6 +275,11 @@ void MeshRenderer::UpdateUniformBuffers(
 				static_cast<float>(static_cast<uint32_t>(debugViewMode)),
 				0.0f,
 				0.0f,
+				0.0f),
+			.ShadowMapParameters = glm::vec4(
+				1.0f / static_cast<float>(ShadowMaps.GetResolution()),
+				1.0f / static_cast<float>(ShadowMaps.GetResolution()),
+				0.005f,
 				0.0f)};
 		std::memcpy(
 			drawResources.UniformBuffersMapped[frameIndex],

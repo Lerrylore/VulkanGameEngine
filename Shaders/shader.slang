@@ -18,6 +18,7 @@ struct UniformBuffer {
     float4 cameraPosition;
     float4 materialMetallicRoughness;
     float4 debugView;
+    float4 shadowMapParameters;
 }
 ConstantBuffer<UniformBuffer> ubo;
 
@@ -57,6 +58,31 @@ float3 FresnelSchlick(float cosine, float3 baseReflectivity)
 float3 EncodeNormal(float3 normal)
 {
     return normal * 0.5 + 0.5;
+}
+
+float CalculateShadowVisibility(float3 shadowCoordinates)
+{
+    if (shadowCoordinates.x < 0.0 || shadowCoordinates.x > 1.0 ||
+        shadowCoordinates.y < 0.0 || shadowCoordinates.y > 1.0 ||
+        shadowCoordinates.z < 0.0 || shadowCoordinates.z > 1.0)
+    {
+        return 1.0;
+    }
+
+    float visibility = 0.0;
+    float2 texelSize = ubo.shadowMapParameters.xy;
+    float bias = ubo.shadowMapParameters.z;
+    for (int offsetX = -1; offsetX <= 1; ++offsetX)
+    {
+        for (int offsetY = -1; offsetY <= 1; ++offsetY)
+        {
+            float2 sampleCoordinates = shadowCoordinates.xy +
+                float2(offsetX, offsetY) * texelSize;
+            float closestDepth = shadowMap.Sample(sampleCoordinates).r;
+            visibility += shadowCoordinates.z - bias <= closestDepth ? 1.0 : 0.2;
+        }
+    }
+    return visibility / 9.0;
 }
 
 struct VSOutput
@@ -113,14 +139,7 @@ float4 fragMain(VSOutput vertIn) : SV_TARGET {
    float3 halfway = normalize(surfaceToLight + surfaceToCamera);
    float3 shadowCoordinates = vertIn.shadowPosition.xyz / vertIn.shadowPosition.w;
    shadowCoordinates.xy = shadowCoordinates.xy * 0.5 + 0.5;
-   float shadowVisibility = 1.0;
-   if (shadowCoordinates.x >= 0.0 && shadowCoordinates.x <= 1.0 &&
-       shadowCoordinates.y >= 0.0 && shadowCoordinates.y <= 1.0 &&
-       shadowCoordinates.z >= 0.0 && shadowCoordinates.z <= 1.0)
-   {
-       float closestDepth = shadowMap.Sample(shadowCoordinates.xy).r;
-       shadowVisibility = shadowCoordinates.z - 0.005 <= closestDepth ? 1.0 : 0.2;
-   }
+   float shadowVisibility = CalculateShadowVisibility(shadowCoordinates);
    float normalLight = max(dot(worldNormal, surfaceToLight), 0.0);
    float normalView = max(dot(worldNormal, surfaceToCamera), 0.0);
    float4 metallicRoughnessSample = metallicRoughnessMap.Sample(vertIn.fragTexCoord * 1.0);
