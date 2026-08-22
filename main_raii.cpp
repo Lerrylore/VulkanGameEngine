@@ -19,6 +19,7 @@
 #include <glm/gtc/matrix_transform.hpp>
 #include <chrono>
 
+#include "Engine/Application/ApplicationLoop.h"
 #include "Engine/Platform/Window.h"
 #include "Engine/Renderer/FrameResources.h"
 #include "Engine/Renderer/MeshRenderer.h"
@@ -150,6 +151,7 @@ class VulkanGameEngineApplication
 	// Declared first so it is destroyed last: the Vulkan surface must not outlive
 	// the native window from which it was created.
 	Window                           window{WIDTH, HEIGHT, "Vulkan Game Engine"};
+	ApplicationLoop                  Loop{window};
 	VulkanContext                    vulkan{window, enableValidationLayers};
 	// Temporary non-owning aliases while rendering still lives in this class.
 	// VulkanContext remains the sole owner of the handles.
@@ -243,17 +245,12 @@ class VulkanGameEngineApplication
 
 	void mainLoop()
 	{
-		auto lastSceneUpdate = std::chrono::steady_clock::now();
-		while (!window.shouldClose())
+		Loop.Run([this](float deltaTime)
 		{
-			window.pollEvents();
 			UpdateDebugViewMode();
-			const auto now = std::chrono::steady_clock::now();
-			const float deltaTime = std::chrono::duration<float>(now - lastSceneUpdate).count();
-			lastSceneUpdate = now;
 			scene.Update(deltaTime);
 			drawFrame();
-		}
+		});
 
 		device.waitIdle();
 		scene.Destroy();

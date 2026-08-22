@@ -131,6 +131,7 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="Engine\Application\ApplicationLoop.cpp" />
     <ClCompile Include="main_raii.cpp" />
     <ClCompile Include="Engine\Platform\Window.cpp" />
     <ClCompile Include="Engine\Renderer\FrameResources.cpp" />
@@ -159,6 +160,7 @@
     <ClCompile Include="Engine\Vulkan\VulkanContext.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="Engine\Application\ApplicationLoop.h" />
     <ClInclude Include="Engine\Platform\Window.h" />
     <ClInclude Include="Engine\Renderer\FrameResources.h" />
     <ClInclude Include="Engine\Renderer\MeshRenderer.h" />

@@ -16,6 +16,9 @@
     <Filter Include="Engine">
       <UniqueIdentifier>{6E5167D7-59CA-4CA3-A288-4EEAE34B465C}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Engine\Application">
+      <UniqueIdentifier>{4B14DB6C-9D20-4C5E-A69D-31DA15E8E0A2}</UniqueIdentifier>
+    </Filter>
     <Filter Include="Engine\Platform">
       <UniqueIdentifier>{307C3B84-2BEB-43EA-A0B2-1614466023E4}</UniqueIdentifier>
     </Filter>
@@ -42,6 +45,9 @@
     </Filter>
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="Engine\Application\ApplicationLoop.cpp">
+      <Filter>Engine\Application</Filter>
+    </ClCompile>
     <ClCompile Include="main_raii.cpp" />
     <ClCompile Include="Engine\Vulkan\VulkanContext.cpp">
       <Filter>Engine\Vulkan</Filter>
@@ -114,6 +120,9 @@
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="Engine\Application\ApplicationLoop.h">
+      <Filter>Engine\Application</Filter>
+    </ClInclude>
     <ClInclude Include="Engine\Platform\Window.h">
       <Filter>Engine\Platform</Filter>
     </ClInclude>
