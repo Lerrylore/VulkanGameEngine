@@ -85,6 +85,26 @@ class GameObject final
 		return nullptr;
 	}
 
+	template <typename T>
+	[[nodiscard]] T& GetRequiredComponent()
+	{
+		if (auto* component = GetComponent<T>())
+		{
+			return *component;
+		}
+		throw std::logic_error("Required component is missing");
+	}
+
+	template <typename T>
+	[[nodiscard]] const T& GetRequiredComponent() const
+	{
+		if (const auto* component = GetComponent<T>())
+		{
+			return *component;
+		}
+		throw std::logic_error("Required component is missing");
+	}
+
 	[[nodiscard]] TransformComponent& GetTransform() noexcept;
 	[[nodiscard]] const TransformComponent& GetTransform() const noexcept;
 	[[nodiscard]] bool IsInitialized() const noexcept;

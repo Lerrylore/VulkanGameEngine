@@ -26,6 +26,7 @@
 #include "Engine/Resources/MeshResource.h"
 #include "Engine/Resources/TextureResource.h"
 #include "Engine/Scene/GameObject.h"
+#include "Engine/Scene/RenderComponent.h"
 #include "Engine/Scene/Scene.h"
 #include "Engine/Scene/TransformComponent.h"
 #include "Engine/Vulkan/VulkanContext.h"
@@ -104,7 +105,7 @@ struct UniformBufferObject
 
 struct RenderObjectResources
 {
-	GameObject*                           Object = nullptr;
+	RenderComponent*                      Component = nullptr;
 	std::vector<BufferAllocation>        UniformBuffers;
 	std::vector<void*>                   UniformBuffersMapped;
 	std::vector<vk::raii::DescriptorSet> DescriptorSets;
@@ -883,23 +884,25 @@ class VulkanGameEngineApplication
 
 	void setupGameObjects()
 	{
+		assert(meshResource.has_value());
+
 		auto& centerObject = scene.CreateGameObject();
 		centerObject.GetTransform().SetPosition({0.0f, 0.0f, 0.0f});
 		centerObject.GetTransform().SetRotation({0.0f, 0.0f, 0.0f});
 		centerObject.GetTransform().SetScale({0.7f, 0.7f, 0.7f});
-		RenderObjects[0].Object = &centerObject;
+		RenderObjects[0].Component = &centerObject.AddComponent<RenderComponent>(*meshResource);
 
 		auto& leftObject = scene.CreateGameObject();
 		leftObject.GetTransform().SetPosition({-1.35f, 0.0f, -0.35f});
 		leftObject.GetTransform().SetRotation({0.0f, 0.0f, glm::radians(-25.0f)});
 		leftObject.GetTransform().SetScale({0.55f, 0.55f, 0.55f});
-		RenderObjects[1].Object = &leftObject;
+		RenderObjects[1].Component = &leftObject.AddComponent<RenderComponent>(*meshResource);
 
 		auto& rightObject = scene.CreateGameObject();
 		rightObject.GetTransform().SetPosition({1.35f, 0.0f, -0.35f});
 		rightObject.GetTransform().SetRotation({0.0f, 0.0f, glm::radians(25.0f)});
 		rightObject.GetTransform().SetScale({0.55f, 0.55f, 0.55f});
-		RenderObjects[2].Object = &rightObject;
+		RenderObjects[2].Component = &rightObject.AddComponent<RenderComponent>(*meshResource);
 	}
 
 	void createUniformBuffers()
@@ -1149,22 +1152,24 @@ class VulkanGameEngineApplication
 
 		commandBuffer.beginRendering(renderingInfo);
 		commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, *graphicsPipeline);
-		commandBuffer.bindVertexBuffers(0, *meshResource->buffer(), {meshResource->vertexOffset()});
-		commandBuffer.bindIndexBuffer(*meshResource->buffer(), meshResource->indexOffset(), meshResource->indexType());
 		commandBuffer.setViewport(0, vk::Viewport(0.0f, 0.0f, static_cast<float>(swapChainExtent.width), static_cast<float>(swapChainExtent.height), 0.0f, 1.0f));
 		commandBuffer.setScissor(0, vk::Rect2D(vk::Offset2D(0, 0), swapChainExtent));
 
-		// Geometry, pipeline and texture are shared. The descriptor set selects the
-		// transform uniform buffer belonging to the object drawn by this call.
+		// Pipeline and texture are shared. Each RenderComponent selects the mesh,
+		// while its descriptor set selects the per-object transform buffer.
 		for (const auto &renderObject : RenderObjects)
 		{
+			assert(renderObject.Component != nullptr);
+			auto& mesh = renderObject.Component->GetMesh();
+			commandBuffer.bindVertexBuffers(0, *mesh.buffer(), {mesh.vertexOffset()});
+			commandBuffer.bindIndexBuffer(*mesh.buffer(), mesh.indexOffset(), mesh.indexType());
 			commandBuffer.bindDescriptorSets(
 				vk::PipelineBindPoint::eGraphics,
 				pipelineLayout,
 				0,
 				*renderObject.DescriptorSets[frameIndex],
 				nullptr);
-			commandBuffer.drawIndexed(meshResource->indexCount(), 1, 0, 0, 0);
+			commandBuffer.drawIndexed(mesh.indexCount(), 1, 0, 0, 0);
 		}
 
 		commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, *particleGraphicsPipeline);
@@ -1334,11 +1339,11 @@ class VulkanGameEngineApplication
 		for (size_t objectIndex = 0; objectIndex < RenderObjects.size(); ++objectIndex)
 		{
 			const auto &renderObject = RenderObjects[objectIndex];
-			assert(renderObject.Object != nullptr);
+			assert(renderObject.Component != nullptr);
 			const float direction = objectIndex % 2 == 0 ? 1.0f : -1.0f;
 
 			UniformBufferObject ubo{};
-			ubo.model = renderObject.Object->GetTransform().ModelMatrix() * glm::rotate(
+			ubo.model = renderObject.Component->GetTransform().ModelMatrix() * glm::rotate(
 				glm::mat4(1.0f),
 				direction * time * glm::radians(35.0f),
 				glm::vec3(0.0f, 0.0f, 1.0f));
