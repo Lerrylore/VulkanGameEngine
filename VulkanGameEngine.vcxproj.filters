@@ -25,6 +25,9 @@
     <Filter Include="Engine\Resources">
       <UniqueIdentifier>{76DE2E66-8541-4EAF-89C9-76C35FA53383}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Engine\Scene">
+      <UniqueIdentifier>{CB74613A-85CC-4C0B-85D3-10396506BC71}</UniqueIdentifier>
+    </Filter>
     <Filter Include="Engine\Vulkan">
       <UniqueIdentifier>{98B05178-0A17-4F36-AC9B-0640C81228EE}</UniqueIdentifier>
     </Filter>
@@ -49,6 +52,9 @@
     <ClCompile Include="Engine\Resources\BufferAllocation.cpp">
       <Filter>Engine\Resources</Filter>
     </ClCompile>
+    <ClCompile Include="Engine\Scene\GameObject.cpp">
+      <Filter>Engine\Scene</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Engine\Platform\Window.h">
@@ -65,6 +71,9 @@
     </ClInclude>
     <ClInclude Include="Engine\Resources\BufferAllocation.h">
       <Filter>Engine\Resources</Filter>
+    </ClInclude>
+    <ClInclude Include="Engine\Scene\GameObject.h">
+      <Filter>Engine\Scene</Filter>
     </ClInclude>
     <ClInclude Include="Engine\Vulkan\VulkanContext.h">
       <Filter>Engine\Vulkan</Filter>

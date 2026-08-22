@@ -24,6 +24,7 @@
 #include "Engine/Renderer/SwapchainResources.h"
 #include "Engine/Resources/BufferAllocation.h"
 #include "Engine/Resources/ImageAllocation.h"
+#include "Engine/Scene/GameObject.h"
 #include "Engine/Vulkan/VulkanContext.h"
 
 // STB Image implementation
@@ -101,25 +102,12 @@ struct UniformBufferObject
 	glm::mat4 proj;
 };
 
-struct GameObject
+struct RenderableGameObject
 {
-	glm::vec3 position{0.0f};
-	glm::vec3 rotation{0.0f};
-	glm::vec3 scale{1.0f};
-
+	GameObject                            scene;
 	std::vector<BufferAllocation>        uniformBuffers;
 	std::vector<void*>                   uniformBuffersMapped;
 	std::vector<vk::raii::DescriptorSet> descriptorSets;
-
-	[[nodiscard]] glm::mat4 getModelMatrix() const
-	{
-		glm::mat4 model{1.0f};
-		model = glm::translate(model, position);
-		model = glm::rotate(model, rotation.x, glm::vec3(1.0f, 0.0f, 0.0f));
-		model = glm::rotate(model, rotation.y, glm::vec3(0.0f, 1.0f, 0.0f));
-		model = glm::rotate(model, rotation.z, glm::vec3(0.0f, 0.0f, 1.0f));
-		return glm::scale(model, scale);
-	}
 };
 
 struct alignas(16) ComputeUniformBufferObject
@@ -198,7 +186,7 @@ class VulkanGameEngineApplication
 	std::vector<void*>            computeUniformBuffersMapped;
 
 	vk::raii::DescriptorPool descriptorPool = nullptr;
-	std::array<GameObject, MAX_OBJECTS> gameObjects;
+	std::array<RenderableGameObject, MAX_OBJECTS> gameObjects;
 	vk::raii::DescriptorPool computeDescriptorPool = nullptr;
 	std::vector<vk::raii::DescriptorSet> computeDescriptorSets;
 
@@ -959,17 +947,17 @@ class VulkanGameEngineApplication
 
 	void setupGameObjects()
 	{
-		gameObjects[0].position = {0.0f, 0.0f, 0.0f};
-		gameObjects[0].rotation = {0.0f, 0.0f, 0.0f};
-		gameObjects[0].scale    = {0.7f, 0.7f, 0.7f};
+		gameObjects[0].scene.position = {0.0f, 0.0f, 0.0f};
+		gameObjects[0].scene.rotation = {0.0f, 0.0f, 0.0f};
+		gameObjects[0].scene.scale    = {0.7f, 0.7f, 0.7f};
 
-		gameObjects[1].position = {-1.35f, 0.0f, -0.35f};
-		gameObjects[1].rotation = {0.0f, 0.0f, glm::radians(-25.0f)};
-		gameObjects[1].scale    = {0.55f, 0.55f, 0.55f};
+		gameObjects[1].scene.position = {-1.35f, 0.0f, -0.35f};
+		gameObjects[1].scene.rotation = {0.0f, 0.0f, glm::radians(-25.0f)};
+		gameObjects[1].scene.scale    = {0.55f, 0.55f, 0.55f};
 
-		gameObjects[2].position = {1.35f, 0.0f, -0.35f};
-		gameObjects[2].rotation = {0.0f, 0.0f, glm::radians(25.0f)};
-		gameObjects[2].scale    = {0.55f, 0.55f, 0.55f};
+		gameObjects[2].scene.position = {1.35f, 0.0f, -0.35f};
+		gameObjects[2].scene.rotation = {0.0f, 0.0f, glm::radians(25.0f)};
+		gameObjects[2].scene.scale    = {0.55f, 0.55f, 0.55f};
 	}
 
 	void createUniformBuffers()
@@ -1434,7 +1422,7 @@ class VulkanGameEngineApplication
 			const float direction = objectIndex % 2 == 0 ? 1.0f : -1.0f;
 
 			UniformBufferObject ubo{};
-			ubo.model = gameObject.getModelMatrix() * glm::rotate(
+			ubo.model = gameObject.scene.modelMatrix() * glm::rotate(
 				glm::mat4(1.0f),
 				direction * time * glm::radians(35.0f),
 				glm::vec3(0.0f, 0.0f, 1.0f));
