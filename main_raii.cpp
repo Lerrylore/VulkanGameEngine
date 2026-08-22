@@ -219,6 +219,7 @@ class VulkanGameEngineApplication
 		createGeometryBuffer();
 		createParticleBuffers();
 		setupGameObjects();
+		DiscoverRenderObjects();
 		createUniformBuffers();
 		createComputeUniformBuffers();
 		createDescriptorPool();
@@ -905,19 +906,19 @@ class VulkanGameEngineApplication
 		centerObject.GetTransform().SetPosition({0.0f, 0.0f, 0.0f});
 		centerObject.GetTransform().SetRotation({0.0f, 0.0f, 0.0f});
 		centerObject.GetTransform().SetScale({0.7f, 0.7f, 0.7f});
-		RenderObjects[0].Component = &centerObject.AddComponent<MeshComponent>(*meshResource, *materialResource);
+		centerObject.AddComponent<MeshComponent>(*meshResource, *materialResource);
 
 		auto& leftObject = scene.CreateGameObject();
 		leftObject.GetTransform().SetPosition({-1.35f, 0.0f, -0.35f});
 		leftObject.GetTransform().SetRotation({0.0f, 0.0f, glm::radians(-25.0f)});
 		leftObject.GetTransform().SetScale({0.55f, 0.55f, 0.55f});
-		RenderObjects[1].Component = &leftObject.AddComponent<MeshComponent>(*meshResource, *materialResource);
+		leftObject.AddComponent<MeshComponent>(*meshResource, *materialResource);
 
 		auto& rightObject = scene.CreateGameObject();
 		rightObject.GetTransform().SetPosition({1.35f, 0.0f, -0.35f});
 		rightObject.GetTransform().SetRotation({0.0f, 0.0f, glm::radians(25.0f)});
 		rightObject.GetTransform().SetScale({0.55f, 0.55f, 0.55f});
-		RenderObjects[2].Component = &rightObject.AddComponent<MeshComponent>(*meshResource, *materialResource);
+		rightObject.AddComponent<MeshComponent>(*meshResource, *materialResource);
 
 		auto& cameraObject = scene.CreateGameObject();
 		cameraObject.GetTransform().SetPosition({2.8f, 2.8f, 3.5f});
@@ -929,6 +930,31 @@ class VulkanGameEngineApplication
 			static_cast<float>(swapChainExtent.width) /
 			static_cast<float>(swapChainExtent.height));
 		ActiveCamera->SetClipPlanes(0.1f, 10.0f);
+	}
+
+	void DiscoverRenderObjects()
+	{
+		for (auto& renderObject : RenderObjects)
+		{
+			renderObject.Component = nullptr;
+		}
+
+		size_t renderObjectCount = 0;
+		scene.ForEachComponent<MeshComponent>([this, &renderObjectCount](MeshComponent& component)
+		{
+			if (renderObjectCount >= RenderObjects.size())
+			{
+				throw std::logic_error("Scene contains more MeshComponents than the renderer supports");
+			}
+
+			RenderObjects[renderObjectCount].Component = &component;
+			++renderObjectCount;
+		});
+
+		if (renderObjectCount != RenderObjects.size())
+		{
+			throw std::logic_error("Scene must contain exactly three MeshComponents");
+		}
 	}
 
 	void createUniformBuffers()
