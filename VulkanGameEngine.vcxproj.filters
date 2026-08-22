@@ -28,6 +28,9 @@
     <Filter Include="Engine\Scene">
       <UniqueIdentifier>{CB74613A-85CC-4C0B-85D3-10396506BC71}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Engine\Scene\Events">
+      <UniqueIdentifier>{C4CB0D46-21FB-4DC2-AF57-E9018F38B06B}</UniqueIdentifier>
+    </Filter>
     <Filter Include="Engine\ThirdParty">
       <UniqueIdentifier>{D287B1BC-F1FB-4A77-9E9D-B49ACF7057A4}</UniqueIdentifier>
     </Filter>
@@ -69,6 +72,15 @@
     </ClCompile>
     <ClCompile Include="Engine\Scene\Component.cpp">
       <Filter>Engine\Scene</Filter>
+    </ClCompile>
+    <ClCompile Include="Engine\Scene\Events\Event.cpp">
+      <Filter>Engine\Scene\Events</Filter>
+    </ClCompile>
+    <ClCompile Include="Engine\Scene\Events\EventDispatcher.cpp">
+      <Filter>Engine\Scene\Events</Filter>
+    </ClCompile>
+    <ClCompile Include="Engine\Scene\Events\EventSubscription.cpp">
+      <Filter>Engine\Scene\Events</Filter>
     </ClCompile>
     <ClCompile Include="Engine\Scene\GameObject.cpp">
       <Filter>Engine\Scene</Filter>
@@ -116,6 +128,15 @@
     </ClInclude>
     <ClInclude Include="Engine\Scene\Component.h">
       <Filter>Engine\Scene</Filter>
+    </ClInclude>
+    <ClInclude Include="Engine\Scene\Events\Event.h">
+      <Filter>Engine\Scene\Events</Filter>
+    </ClInclude>
+    <ClInclude Include="Engine\Scene\Events\EventDispatcher.h">
+      <Filter>Engine\Scene\Events</Filter>
+    </ClInclude>
+    <ClInclude Include="Engine\Scene\Events\EventSubscription.h">
+      <Filter>Engine\Scene\Events</Filter>
     </ClInclude>
     <ClInclude Include="Engine\Scene\GameObject.h">
       <Filter>Engine\Scene</Filter>

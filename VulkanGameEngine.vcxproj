@@ -142,6 +142,9 @@
     <ClCompile Include="Engine\Resources\TextureResource.cpp" />
     <ClCompile Include="Engine\Scene\CameraComponent.cpp" />
     <ClCompile Include="Engine\Scene\Component.cpp" />
+    <ClCompile Include="Engine\Scene\Events\Event.cpp" />
+    <ClCompile Include="Engine\Scene\Events\EventDispatcher.cpp" />
+    <ClCompile Include="Engine\Scene\Events\EventSubscription.cpp" />
     <ClCompile Include="Engine\Scene\GameObject.cpp" />
     <ClCompile Include="Engine\Scene\MeshComponent.cpp" />
     <ClCompile Include="Engine\Scene\Scene.cpp" />
@@ -160,6 +163,9 @@
     <ClInclude Include="Engine\Resources\TextureResource.h" />
     <ClInclude Include="Engine\Scene\CameraComponent.h" />
     <ClInclude Include="Engine\Scene\Component.h" />
+    <ClInclude Include="Engine\Scene\Events\Event.h" />
+    <ClInclude Include="Engine\Scene\Events\EventDispatcher.h" />
+    <ClInclude Include="Engine\Scene\Events\EventSubscription.h" />
     <ClInclude Include="Engine\Scene\GameObject.h" />
     <ClInclude Include="Engine\Scene\MeshComponent.h" />
     <ClInclude Include="Engine\Scene\Scene.h" />
