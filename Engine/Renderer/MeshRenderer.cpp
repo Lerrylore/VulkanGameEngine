@@ -33,6 +33,7 @@ struct MeshUniformBufferObject
 	glm::vec4 MaterialBaseColorAmbient;
 	glm::vec4 CameraPosition;
 	glm::vec4 MaterialMetallicRoughness;
+	glm::vec4 DebugView;
 };
 }
 
@@ -225,7 +226,8 @@ void MeshRenderer::UpdateUniformBuffers(
 	const glm::mat4& projection,
 	const glm::vec3& cameraPosition,
 	const glm::mat4& shadowViewProjection,
-	float elapsedTime)
+	float elapsedTime,
+	DebugViewMode debugViewMode)
 {
 	ValidateFrameIndex(frameIndex);
 
@@ -256,6 +258,11 @@ void MeshRenderer::UpdateUniformBuffers(
 			.MaterialMetallicRoughness = glm::vec4(
 				material.GetMetallic(),
 				material.GetRoughness(),
+				0.0f,
+				0.0f),
+			.DebugView = glm::vec4(
+				static_cast<float>(static_cast<uint32_t>(debugViewMode)),
+				0.0f,
 				0.0f,
 				0.0f)};
 		std::memcpy(

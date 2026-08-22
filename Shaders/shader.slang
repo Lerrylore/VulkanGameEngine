@@ -17,6 +17,7 @@ struct UniformBuffer {
     float4 materialBaseColorAmbient;
     float4 cameraPosition;
     float4 materialMetallicRoughness;
+    float4 debugView;
 }
 ConstantBuffer<UniformBuffer> ubo;
 
@@ -51,6 +52,11 @@ float3 FresnelSchlick(float cosine, float3 baseReflectivity)
 {
     return baseReflectivity +
         (1.0 - baseReflectivity) * pow(1.0 - cosine, 5.0);
+}
+
+float3 EncodeNormal(float3 normal)
+{
+    return normal * 0.5 + 0.5;
 }
 
 struct VSOutput
@@ -119,6 +125,41 @@ float4 fragMain(VSOutput vertIn) : SV_TARGET {
    float metallic = clamp(ubo.materialMetallicRoughness.x, 0.0, 1.0);
    float roughness = clamp(ubo.materialMetallicRoughness.y, 0.04, 1.0);
    float3 albedo = baseColor.rgb * ubo.materialBaseColorAmbient.rgb;
+
+   uint debugView = (uint)ubo.debugView.x;
+   if (debugView == 1)
+   {
+       return float4(EncodeNormal(worldNormal), 1.0);
+   }
+   if (debugView == 2)
+   {
+       return float4(EncodeNormal(tangentNormal), 1.0);
+   }
+   if (debugView == 3)
+   {
+       return float4(roughness.xxx, 1.0);
+   }
+   if (debugView == 4)
+   {
+       return float4(metallic.xxx, 1.0);
+   }
+   if (debugView == 5)
+   {
+       return float4(shadowVisibility.xxx, 1.0);
+   }
+   if (debugView == 6)
+   {
+       return float4(albedo, baseColor.a);
+   }
+   if (debugView == 7)
+   {
+       return float4(EncodeNormal(geometricNormal), 1.0);
+   }
+   if (debugView == 8)
+   {
+       return float4(EncodeNormal(worldTangent), 1.0);
+   }
+
    float3 baseReflectivity = lerp(float3(0.04), albedo, metallic);
    float3 fresnel = FresnelSchlick(max(dot(halfway, surfaceToCamera), 0.0), baseReflectivity);
    float normalDistribution = DistributionGGX(worldNormal, halfway, roughness);

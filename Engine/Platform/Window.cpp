@@ -59,6 +59,43 @@ bool Window::wasFramebufferResized() const noexcept
 	return framebufferResized;
 }
 
+bool Window::IsKeyDown(WindowKey key) const noexcept
+{
+	int glfwKey = GLFW_KEY_UNKNOWN;
+	switch (key)
+	{
+	case WindowKey::Number0:
+		glfwKey = GLFW_KEY_0;
+		break;
+	case WindowKey::Number1:
+		glfwKey = GLFW_KEY_1;
+		break;
+	case WindowKey::Number2:
+		glfwKey = GLFW_KEY_2;
+		break;
+	case WindowKey::Number3:
+		glfwKey = GLFW_KEY_3;
+		break;
+	case WindowKey::Number4:
+		glfwKey = GLFW_KEY_4;
+		break;
+	case WindowKey::Number5:
+		glfwKey = GLFW_KEY_5;
+		break;
+	case WindowKey::Number6:
+		glfwKey = GLFW_KEY_6;
+		break;
+	case WindowKey::Number7:
+		glfwKey = GLFW_KEY_7;
+		break;
+	case WindowKey::Number8:
+		glfwKey = GLFW_KEY_8;
+		break;
+	}
+
+	return glfwGetKey(handle, glfwKey) == GLFW_PRESS;
+}
+
 void Window::pollEvents() const noexcept
 {
 	glfwPollEvents();

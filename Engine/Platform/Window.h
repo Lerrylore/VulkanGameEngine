@@ -5,6 +5,19 @@
 
 struct GLFWwindow;
 
+enum class WindowKey
+{
+	Number0,
+	Number1,
+	Number2,
+	Number3,
+	Number4,
+	Number5,
+	Number6,
+	Number7,
+	Number8
+};
+
 class Window final
 {
   public:
@@ -20,6 +33,7 @@ class Window final
 	[[nodiscard]] bool shouldClose() const noexcept;
 	[[nodiscard]] std::pair<int, int> framebufferSize() const noexcept;
 	[[nodiscard]] bool wasFramebufferResized() const noexcept;
+	[[nodiscard]] bool IsKeyDown(WindowKey key) const noexcept;
 
 	void pollEvents() const noexcept;
 	void waitEvents() const noexcept;

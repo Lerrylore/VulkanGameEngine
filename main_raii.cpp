@@ -1,5 +1,6 @@
 #include <algorithm>
 #include <assert.h>
+#include <array>
 #include <cstdlib>
 #include <cstring>
 #include <fstream>
@@ -10,6 +11,7 @@
 #include <random>
 #include <stdexcept>
 #include <unordered_map>
+#include <utility>
 #include <vector>
 #include <tiny_obj_loader.h>
 #include <glm/glm.hpp>
@@ -192,6 +194,7 @@ class VulkanGameEngineApplication
 	Scene scene{Services};
 	CameraComponent* ActiveCamera = nullptr;
 	DirectionalLightComponent* DirectionalLight = nullptr;
+	DebugViewMode CurrentDebugView = DebugViewMode::Lit;
 	// Declared after Scene and its resources so it is destroyed before them.
 	std::optional<MeshRenderer> MeshRendererInstance;
 	vk::raii::DescriptorPool computeDescriptorPool = nullptr;
@@ -226,6 +229,8 @@ class VulkanGameEngineApplication
 		createComputeDescriptorPool();
 		createComputeDescriptorSets();
 		scene.Initialize();
+		std::clog << "[DebugView] 0 Lit, 1 WorldNormal, 2 TangentNormal, 3 Roughness, 4 Metallic, "
+			"5 Shadow, 6 Albedo, 7 GeometricNormal, 8 Tangent\n";
 	}
 
 	void mainLoop()
@@ -234,6 +239,7 @@ class VulkanGameEngineApplication
 		while (!window.shouldClose())
 		{
 			window.pollEvents();
+			UpdateDebugViewMode();
 			const auto now = std::chrono::steady_clock::now();
 			const float deltaTime = std::chrono::duration<float>(now - lastSceneUpdate).count();
 			lastSceneUpdate = now;
@@ -1530,7 +1536,35 @@ class VulkanGameEngineApplication
 			proj,
 			ActiveCamera->GetPosition(),
 			shadowViewProjection,
-			time);
+			time,
+			CurrentDebugView);
+	}
+
+	void UpdateDebugViewMode()
+	{
+		static constexpr std::array<std::pair<WindowKey, DebugViewMode>, 9> modes{{
+			{WindowKey::Number0, DebugViewMode::Lit},
+			{WindowKey::Number1, DebugViewMode::WorldNormal},
+			{WindowKey::Number2, DebugViewMode::TangentNormal},
+			{WindowKey::Number3, DebugViewMode::Roughness},
+			{WindowKey::Number4, DebugViewMode::Metallic},
+			{WindowKey::Number5, DebugViewMode::Shadow},
+			{WindowKey::Number6, DebugViewMode::Albedo},
+			{WindowKey::Number7, DebugViewMode::GeometricNormal},
+			{WindowKey::Number8, DebugViewMode::Tangent}}};
+
+		for (const auto [key, mode] : modes)
+		{
+			if (window.IsKeyDown(key))
+			{
+				if (CurrentDebugView != mode)
+				{
+					CurrentDebugView = mode;
+					std::clog << "[DebugView] mode " << static_cast<uint32_t>(mode) << '\n';
+				}
+				return;
+			}
+		}
 	}
 
 	[[nodiscard]] glm::mat4 GetShadowViewProjection() const

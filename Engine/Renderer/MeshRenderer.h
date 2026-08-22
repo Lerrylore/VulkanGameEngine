@@ -12,6 +12,19 @@ class Scene;
 class DirectionalLightComponent;
 class ShadowMapResources;
 
+enum class DebugViewMode : uint32_t
+{
+	Lit = 0,
+	WorldNormal = 1,
+	TangentNormal = 2,
+	Roughness = 3,
+	Metallic = 4,
+	Shadow = 5,
+	Albedo = 6,
+	GeometricNormal = 7,
+	Tangent = 8
+};
+
 class MeshRenderer final
 {
   public:
@@ -38,7 +51,8 @@ class MeshRenderer final
 		const glm::mat4& projection,
 		const glm::vec3& cameraPosition,
 		const glm::mat4& shadowViewProjection,
-		float elapsedTime);
+		float elapsedTime,
+		DebugViewMode debugViewMode);
 	void RecordShadowDraws(
 		vk::raii::CommandBuffer& commandBuffer,
 		const vk::raii::Pipeline& pipeline,
