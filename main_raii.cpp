@@ -527,10 +527,13 @@ class VulkanGameEngineApplication
 			stagingSize = totalSize;
 		}
 
-		auto [stagingBuffer, stagingBufferMemory] =
-			createBuffer(stagingSize, vk::BufferUsageFlagBits::eTransferSrc, vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent);
+		BufferAllocation stagingBuffer{
+			vulkan,
+			stagingSize,
+			vk::BufferUsageFlagBits::eTransferSrc,
+			vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent};
 
-		void* data = stagingBufferMemory.mapMemory(0, stagingSize);
+		void* data = stagingBuffer.memory().mapMemory(0, stagingSize);
 		if (supportsLinearBlit)
 		{
 			memcpy(data, pixels, static_cast<std::size_t>(stagingSize));
@@ -539,7 +542,7 @@ class VulkanGameEngineApplication
 		{
 			memcpy(data, cpuMipPixels.data(), static_cast<std::size_t>(stagingSize));
 		}
-		stagingBufferMemory.unmapMemory();
+		stagingBuffer.memory().unmapMemory();
 
 		stbi_image_free(pixels);
 
@@ -561,7 +564,7 @@ class VulkanGameEngineApplication
 		transitionImageLayout(commandBuffer, image, vk::ImageLayout::eUndefined, vk::ImageLayout::eTransferDstOptimal, mipLevels);
 		if (supportsLinearBlit)
 		{
-			copyBufferToImage(commandBuffer, stagingBuffer, image, static_cast<uint32_t>(texWidth), static_cast<uint32_t>(texHeight));
+			copyBufferToImage(commandBuffer, stagingBuffer.buffer(), image, static_cast<uint32_t>(texWidth), static_cast<uint32_t>(texHeight));
 			generateMipmaps(commandBuffer, image, textureFormat, texWidth, texHeight, mipLevels);
 		}
 		else
@@ -583,7 +586,7 @@ class VulkanGameEngineApplication
 					.imageOffset = {0, 0, 0},
 					.imageExtent = {mip.width, mip.height, 1}});
 			}
-			commandBuffer.copyBufferToImage(stagingBuffer, image, vk::ImageLayout::eTransferDstOptimal, regions);
+			commandBuffer.copyBufferToImage(*stagingBuffer.buffer(), image, vk::ImageLayout::eTransferDstOptimal, regions);
 			transitionImageLayout(commandBuffer, image, vk::ImageLayout::eTransferDstOptimal, vk::ImageLayout::eShaderReadOnlyOptimal, mipLevels);
 		}
 		endSingleTimeCommands(std::move(commandBuffer));
@@ -1111,32 +1114,6 @@ class VulkanGameEngineApplication
 		vk::raii::CommandBuffer commandCopyBuffer = beginSingleTimeCommands();
 		commandCopyBuffer.copyBuffer(*srcBuffer, *dstBuffer, vk::BufferCopy{ .size = size });
 		endSingleTimeCommands(std::move(commandCopyBuffer));
-	}
-
-	std::pair<vk::raii::Buffer, vk::raii::DeviceMemory> createBuffer(vk::DeviceSize size, vk::BufferUsageFlags usage, vk::MemoryPropertyFlags properties)
-	{
-		vk::BufferCreateInfo   bufferInfo{ .size = size, .usage = usage, .sharingMode = vk::SharingMode::eExclusive };
-		vk::raii::Buffer       buffer = vk::raii::Buffer(device, bufferInfo);
-		vk::MemoryRequirements memRequirements = buffer.getMemoryRequirements();
-		vk::MemoryAllocateInfo allocInfo{ .allocationSize = memRequirements.size, .memoryTypeIndex = findMemoryType(memRequirements.memoryTypeBits, properties) };
-		vk::raii::DeviceMemory bufferMemory = vk::raii::DeviceMemory(device, allocInfo);
-		buffer.bindMemory(*bufferMemory, 0);
-		return { std::move(buffer), std::move(bufferMemory) };
-	}
-
-	uint32_t findMemoryType(uint32_t typeFilter, vk::MemoryPropertyFlags properties) 
-	{
-		vk::PhysicalDeviceMemoryProperties memProperties = physicalDevice.getMemoryProperties();
-
-		for (uint32_t i = 0; i < memProperties.memoryTypeCount; i++)
-		{
-			if ((typeFilter & (1 << i)) && (memProperties.memoryTypes[i].propertyFlags & properties) == properties)
-			{
-				return i;
-			}
-		}
-
-		throw std::runtime_error("failed to find suitable memory type!");
 	}
 
 	void createCommandBuffers()
