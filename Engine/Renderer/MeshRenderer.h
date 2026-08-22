@@ -10,6 +10,7 @@
 
 class Scene;
 class DirectionalLightComponent;
+class ShadowMapResources;
 
 class MeshRenderer final
 {
@@ -17,6 +18,7 @@ class MeshRenderer final
 	MeshRenderer(
 		VulkanContext& vulkan,
 		const vk::raii::DescriptorSetLayout& descriptorSetLayout,
+		ShadowMapResources& shadowMaps,
 		uint32_t framesInFlight);
 	~MeshRenderer();
 
@@ -35,7 +37,13 @@ class MeshRenderer final
 		const glm::mat4& view,
 		const glm::mat4& projection,
 		const glm::vec3& cameraPosition,
+		const glm::mat4& shadowViewProjection,
 		float elapsedTime);
+	void RecordShadowDraws(
+		vk::raii::CommandBuffer& commandBuffer,
+		const vk::raii::Pipeline& pipeline,
+		const vk::raii::PipelineLayout& pipelineLayout,
+		uint32_t frameIndex) const;
 	void RecordDraws(
 		vk::raii::CommandBuffer& commandBuffer,
 		const vk::raii::Pipeline& pipeline,
@@ -51,6 +59,7 @@ class MeshRenderer final
 
 	VulkanContext& Vulkan;
 	const vk::raii::DescriptorSetLayout& DescriptorSetLayout;
+	ShadowMapResources& ShadowMaps;
 	uint32_t FrameCount = 0;
 
 	// Draw resources contain the descriptor sets and are destroyed first.

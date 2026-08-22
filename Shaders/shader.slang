@@ -10,6 +10,7 @@ struct UniformBuffer {
     float4x4 view;
     float4x4 proj;
     float4x4 normalMatrix;
+    float4x4 shadowViewProjection;
     float4 lightDirection;
     float4 lightColorIntensity;
     float4 materialBaseColorAmbient;
@@ -58,9 +59,11 @@ struct VSOutput
     float2 fragTexCoord;
     float3 worldNormal;
     float3 worldPosition;
+    float4 shadowPosition;
 };
 
 Sampler2D texture;
+Sampler2D shadowMap;
 
 [shader("vertex")]
 VSOutput vertMain(VSInput input) {
@@ -70,7 +73,14 @@ VSOutput vertMain(VSInput input) {
     output.fragTexCoord = input.inTexCoord;
     output.worldNormal = normalize(mul((float3x3)ubo.normalMatrix, input.inNormal));
     output.worldPosition = mul(ubo.model, float4(input.inPosition, 1.0)).xyz;
+    output.shadowPosition = mul(ubo.shadowViewProjection, mul(ubo.model, float4(input.inPosition, 1.0)));
     return output;
+}
+
+[shader("vertex")]
+float4 shadowVertMain(VSInput input) : SV_Position
+{
+    return mul(ubo.shadowViewProjection, mul(ubo.model, float4(input.inPosition, 1.0)));
 }
 
 [shader("fragment")]
@@ -80,6 +90,16 @@ float4 fragMain(VSOutput vertIn) : SV_TARGET {
    float3 surfaceToLight = normalize(-ubo.lightDirection.xyz);
    float3 surfaceToCamera = normalize(ubo.cameraPosition.xyz - vertIn.worldPosition);
    float3 halfway = normalize(surfaceToLight + surfaceToCamera);
+   float3 shadowCoordinates = vertIn.shadowPosition.xyz / vertIn.shadowPosition.w;
+   shadowCoordinates.xy = shadowCoordinates.xy * 0.5 + 0.5;
+   float shadowVisibility = 1.0;
+   if (shadowCoordinates.x >= 0.0 && shadowCoordinates.x <= 1.0 &&
+       shadowCoordinates.y >= 0.0 && shadowCoordinates.y <= 1.0 &&
+       shadowCoordinates.z >= 0.0 && shadowCoordinates.z <= 1.0)
+   {
+       float closestDepth = shadowMap.Sample(shadowCoordinates.xy).r;
+       shadowVisibility = shadowCoordinates.z - 0.005 <= closestDepth ? 1.0 : 0.2;
+   }
    float normalLight = max(dot(worldNormal, surfaceToLight), 0.0);
    float normalView = max(dot(worldNormal, surfaceToCamera), 0.0);
    float metallic = clamp(ubo.materialMetallicRoughness.x, 0.0, 1.0);
@@ -94,7 +114,7 @@ float4 fragMain(VSOutput vertIn) : SV_TARGET {
    float3 diffuseRatio = (1.0 - fresnel) * (1.0 - metallic);
    float3 diffuse = diffuseRatio * albedo / PI;
    float3 radiance = ubo.lightColorIntensity.rgb * ubo.lightColorIntensity.a;
-   float3 directLighting = (diffuse + specular) * radiance * normalLight;
+   float3 directLighting = (diffuse + specular) * radiance * normalLight * shadowVisibility;
    float3 ambientLighting = ubo.materialBaseColorAmbient.aaa * diffuseRatio * albedo;
    return float4(ambientLighting + directLighting, baseColor.a);
 }

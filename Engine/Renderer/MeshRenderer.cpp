@@ -8,6 +8,7 @@
 #include "../Scene/DirectionalLightComponent.h"
 #include "../Scene/Scene.h"
 #include "../Scene/TransformComponent.h"
+#include "ShadowMapResources.h"
 
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/matrix_inverse.hpp>
@@ -26,6 +27,7 @@ struct MeshUniformBufferObject
 	glm::mat4 View;
 	glm::mat4 Projection;
 	glm::mat4 NormalMatrix;
+	glm::mat4 ShadowViewProjection;
 	glm::vec4 LightDirection;
 	glm::vec4 LightColorIntensity;
 	glm::vec4 MaterialBaseColorAmbient;
@@ -71,8 +73,9 @@ struct MeshRenderer::MeshDrawResources
 MeshRenderer::MeshRenderer(
 	VulkanContext& vulkan,
 	const vk::raii::DescriptorSetLayout& descriptorSetLayout,
+	ShadowMapResources& shadowMaps,
 	uint32_t framesInFlight)
-	: Vulkan(vulkan), DescriptorSetLayout(descriptorSetLayout), FrameCount(framesInFlight)
+	: Vulkan(vulkan), DescriptorSetLayout(descriptorSetLayout), ShadowMaps(shadowMaps), FrameCount(framesInFlight)
 {
 	if (FrameCount == 0)
 	{
@@ -115,9 +118,13 @@ void MeshRenderer::Build(const Scene& scene)
 	}
 
 	const uint32_t descriptorCount = static_cast<uint32_t>(components.size()) * FrameCount;
+	if (descriptorCount > std::numeric_limits<uint32_t>::max() / 2)
+	{
+		throw std::overflow_error("MeshRenderer sampled image descriptor count exceeds Vulkan limits");
+	}
 	const std::array<vk::DescriptorPoolSize, 2> poolSizes{{
 		{.type = vk::DescriptorType::eUniformBuffer, .descriptorCount = descriptorCount},
-		{.type = vk::DescriptorType::eCombinedImageSampler, .descriptorCount = descriptorCount}}};
+		{.type = vk::DescriptorType::eCombinedImageSampler, .descriptorCount = descriptorCount * 2}}};
 	const vk::DescriptorPoolCreateInfo poolInfo{
 		.flags = vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet,
 		.maxSets = descriptorCount,
@@ -167,7 +174,11 @@ void MeshRenderer::Build(const Scene& scene)
 					.sampler = *baseColorTexture.sampler(),
 					.imageView = *baseColorTexture.imageView(),
 					.imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal};
-				const std::array<vk::WriteDescriptorSet, 2> writes{{
+				const vk::DescriptorImageInfo shadowMapInfo{
+					.sampler = *ShadowMaps.GetSampler(frameIndex),
+					.imageView = *ShadowMaps.GetImageView(frameIndex),
+					.imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal};
+				const std::array<vk::WriteDescriptorSet, 3> writes{{
 					{.dstSet = drawResources.DescriptorSets[frameIndex],
 					 .dstBinding = 0,
 					 .descriptorCount = 1,
@@ -176,8 +187,13 @@ void MeshRenderer::Build(const Scene& scene)
 					{.dstSet = drawResources.DescriptorSets[frameIndex],
 					 .dstBinding = 1,
 					 .descriptorCount = 1,
-					 .descriptorType = vk::DescriptorType::eCombinedImageSampler,
-					 .pImageInfo = &imageInfo}}};
+						 .descriptorType = vk::DescriptorType::eCombinedImageSampler,
+						 .pImageInfo = &imageInfo},
+					{.dstSet = drawResources.DescriptorSets[frameIndex],
+						 .dstBinding = 2,
+						 .descriptorCount = 1,
+						 .descriptorType = vk::DescriptorType::eCombinedImageSampler,
+						 .pImageInfo = &shadowMapInfo}}};
 				Vulkan.device().updateDescriptorSets(writes, {});
 			}
 		}
@@ -198,6 +214,7 @@ void MeshRenderer::UpdateUniformBuffers(
 	const glm::mat4& view,
 	const glm::mat4& projection,
 	const glm::vec3& cameraPosition,
+	const glm::mat4& shadowViewProjection,
 	float elapsedTime)
 {
 	ValidateFrameIndex(frameIndex);
@@ -217,6 +234,7 @@ void MeshRenderer::UpdateUniformBuffers(
 			.View = view,
 			.Projection = projection,
 			.NormalMatrix = glm::inverseTranspose(model),
+			.ShadowViewProjection = shadowViewProjection,
 			.LightDirection = glm::vec4(light.GetDirection(), 0.0f),
 			.LightColorIntensity = glm::vec4(light.GetColor(), light.GetIntensity()),
 			.MaterialBaseColorAmbient = glm::vec4(
@@ -234,6 +252,30 @@ void MeshRenderer::UpdateUniformBuffers(
 			drawResources.UniformBuffersMapped[frameIndex],
 			&uniformBuffer,
 			sizeof(uniformBuffer));
+	}
+}
+
+void MeshRenderer::RecordShadowDraws(
+	vk::raii::CommandBuffer& commandBuffer,
+	const vk::raii::Pipeline& pipeline,
+	const vk::raii::PipelineLayout& pipelineLayout,
+	uint32_t frameIndex) const
+{
+	ValidateFrameIndex(frameIndex);
+	commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, *pipeline);
+
+	for (const auto& drawResources : DrawResources)
+	{
+		const auto& mesh = drawResources.Component->GetMesh();
+		commandBuffer.bindVertexBuffers(0, *mesh.buffer(), {mesh.vertexOffset()});
+		commandBuffer.bindIndexBuffer(*mesh.buffer(), mesh.indexOffset(), mesh.indexType());
+		commandBuffer.bindDescriptorSets(
+			vk::PipelineBindPoint::eGraphics,
+			*pipelineLayout,
+			0,
+			*drawResources.DescriptorSets[frameIndex],
+			nullptr);
+		commandBuffer.drawIndexed(mesh.indexCount(), 1, 0, 0, 0);
 	}
 }
 

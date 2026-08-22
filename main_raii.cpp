@@ -21,6 +21,7 @@
 #include "Engine/Renderer/FrameResources.h"
 #include "Engine/Renderer/MeshRenderer.h"
 #include "Engine/Renderer/RenderTargetResources.h"
+#include "Engine/Renderer/ShadowMapResources.h"
 #include "Engine/Renderer/SwapchainResources.h"
 #include "Engine/Events/EventBus.h"
 #include "Engine/Resources/BufferAllocation.h"
@@ -157,6 +158,7 @@ class VulkanGameEngineApplication
 	const vk::Extent2D&              swapChainExtent = swapchainResources.extent();
 	const std::vector<vk::raii::ImageView>& swapChainImageViews = swapchainResources.imageViews();
 	RenderTargetResources            renderTargets{vulkan, swapchainResources};
+	ShadowMapResources               shadowMapResources{vulkan, MAX_FRAMES_IN_FLIGHT};
 	vk::raii::Image&                 depthImage = renderTargets.depthImage();
 	vk::raii::ImageView&             depthImageView = renderTargets.depthImageView();
 	vk::raii::Image&                 colorImage = renderTargets.colorImage();
@@ -165,6 +167,8 @@ class VulkanGameEngineApplication
 	vk::raii::DescriptorSetLayout descriptorSetLayout = nullptr;
 	vk::raii::PipelineLayout pipelineLayout   = nullptr;
 	vk::raii::Pipeline       graphicsPipeline = nullptr;
+	vk::raii::PipelineLayout shadowPipelineLayout = nullptr;
+	vk::raii::Pipeline       shadowGraphicsPipeline = nullptr;
 	vk::raii::PipelineLayout particlePipelineLayout = nullptr;
 	vk::raii::Pipeline       particleGraphicsPipeline = nullptr;
 
@@ -184,6 +188,7 @@ class VulkanGameEngineApplication
 	ServiceLocator Services;
 	Scene scene{Services};
 	CameraComponent* ActiveCamera = nullptr;
+	DirectionalLightComponent* DirectionalLight = nullptr;
 	// Declared after Scene and its resources so it is destroyed before them.
 	std::optional<MeshRenderer> MeshRendererInstance;
 	vk::raii::DescriptorPool computeDescriptorPool = nullptr;
@@ -202,6 +207,7 @@ class VulkanGameEngineApplication
 		createDescriptorSetLayout();
 		createComputeDescriptorSetLayout();
 		createGraphicsPipeline();
+		createShadowGraphicsPipeline();
 		createParticleGraphicsPipeline();
 		createComputePipeline();
 		createTextureImage();
@@ -210,7 +216,7 @@ class VulkanGameEngineApplication
 		createGeometryBuffer();
 		createParticleBuffers();
 		setupGameObjects();
-		MeshRendererInstance.emplace(vulkan, descriptorSetLayout, MAX_FRAMES_IN_FLIGHT);
+		MeshRendererInstance.emplace(vulkan, descriptorSetLayout, shadowMapResources, MAX_FRAMES_IN_FLIGHT);
 		MeshRendererInstance->Build(scene);
 		createComputeUniformBuffers();
 		createComputeDescriptorPool();
@@ -338,6 +344,72 @@ class VulkanGameEngineApplication
 			 .depthAttachmentFormat = renderTargets.depthFormat()}};
 
 		graphicsPipeline = vk::raii::Pipeline(device, nullptr, pipelineCreateInfoChain.get<vk::GraphicsPipelineCreateInfo>());
+	}
+
+	void createShadowGraphicsPipeline()
+	{
+		vk::raii::ShaderModule shaderModule = createShaderModule(readFile("Shaders/slang.spv"));
+		vk::PipelineShaderStageCreateInfo vertexShaderStageInfo{
+			.stage = vk::ShaderStageFlagBits::eVertex,
+			.module = shaderModule,
+			.pName = "shadowVertMain"};
+
+		auto bindingDescription = Vertex::GetBindingDescription();
+		auto attributeDescriptions = Vertex::GetAttributeDescriptions();
+		const vk::VertexInputAttributeDescription positionAttribute = attributeDescriptions[0];
+		vk::PipelineVertexInputStateCreateInfo vertexInputInfo{
+			.vertexBindingDescriptionCount = 1,
+			.pVertexBindingDescriptions = &bindingDescription,
+			.vertexAttributeDescriptionCount = 1,
+			.pVertexAttributeDescriptions = &positionAttribute};
+		vk::PipelineInputAssemblyStateCreateInfo inputAssembly{.topology = vk::PrimitiveTopology::eTriangleList};
+		vk::PipelineViewportStateCreateInfo viewportState{.viewportCount = 1, .scissorCount = 1};
+		vk::PipelineRasterizationStateCreateInfo rasterizer{
+			.depthClampEnable = vk::False,
+			.rasterizerDiscardEnable = vk::False,
+			.polygonMode = vk::PolygonMode::eFill,
+			.cullMode = vk::CullModeFlagBits::eBack,
+			.frontFace = vk::FrontFace::eCounterClockwise,
+			.depthBiasEnable = vk::True,
+			.depthBiasConstantFactor = 1.25f,
+			.depthBiasSlopeFactor = 1.75f,
+			.lineWidth = 1.0f};
+		vk::PipelineMultisampleStateCreateInfo multisampling{
+			.rasterizationSamples = vk::SampleCountFlagBits::e1};
+		vk::PipelineDepthStencilStateCreateInfo depthStencil{
+			.depthTestEnable = vk::True,
+			.depthWriteEnable = vk::True,
+			.depthCompareOp = vk::CompareOp::eLess,
+			.depthBoundsTestEnable = vk::False,
+			.stencilTestEnable = vk::False};
+		std::array dynamicStates{vk::DynamicState::eViewport, vk::DynamicState::eScissor};
+		vk::PipelineDynamicStateCreateInfo dynamicState{
+			.dynamicStateCount = static_cast<uint32_t>(dynamicStates.size()),
+			.pDynamicStates = dynamicStates.data()};
+
+		vk::PipelineLayoutCreateInfo pipelineLayoutInfo{
+			.setLayoutCount = 1,
+			.pSetLayouts = &*descriptorSetLayout};
+		shadowPipelineLayout = vk::raii::PipelineLayout(device, pipelineLayoutInfo);
+
+		vk::StructureChain<vk::GraphicsPipelineCreateInfo, vk::PipelineRenderingCreateInfo> pipelineChain{
+			{.stageCount = 1,
+			 .pStages = &vertexShaderStageInfo,
+			 .pVertexInputState = &vertexInputInfo,
+			 .pInputAssemblyState = &inputAssembly,
+			 .pViewportState = &viewportState,
+			 .pRasterizationState = &rasterizer,
+			 .pMultisampleState = &multisampling,
+			 .pDepthStencilState = &depthStencil,
+			 .pDynamicState = &dynamicState,
+			 .layout = shadowPipelineLayout,
+			 .renderPass = nullptr},
+			{.colorAttachmentCount = 0,
+			 .depthAttachmentFormat = shadowMapResources.GetFormat()}};
+		shadowGraphicsPipeline = vk::raii::Pipeline(
+			device,
+			nullptr,
+			pipelineChain.get<vk::GraphicsPipelineCreateInfo>());
 	}
 
 	void createParticleGraphicsPipeline()
@@ -703,9 +775,10 @@ class VulkanGameEngineApplication
 
 	void createDescriptorSetLayout() 
 	{
-		std::array<vk::DescriptorSetLayoutBinding, 2> bindings{
+		std::array<vk::DescriptorSetLayoutBinding, 3> bindings{
 			{{.binding = 0, .descriptorType = vk::DescriptorType::eUniformBuffer, .descriptorCount = 1, .stageFlags = vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment},
-			 {.binding = 1, .descriptorType = vk::DescriptorType::eCombinedImageSampler, .descriptorCount = 1, .stageFlags = vk::ShaderStageFlagBits::eFragment}} };
+			 {.binding = 1, .descriptorType = vk::DescriptorType::eCombinedImageSampler, .descriptorCount = 1, .stageFlags = vk::ShaderStageFlagBits::eFragment},
+			 {.binding = 2, .descriptorType = vk::DescriptorType::eCombinedImageSampler, .descriptorCount = 1, .stageFlags = vk::ShaderStageFlagBits::eFragment}} };
 
 		vk::DescriptorSetLayoutCreateInfo layoutInfo{ .bindingCount = static_cast<uint32_t>(bindings.size()), .pBindings = bindings.data() };
 
@@ -910,7 +983,8 @@ class VulkanGameEngineApplication
 		materialResource->SetRoughness(0.32f);
 
 		auto& lightObject = scene.CreateGameObject();
-		auto& directionalLight = lightObject.AddComponent<DirectionalLightComponent>();
+		DirectionalLight = &lightObject.AddComponent<DirectionalLightComponent>();
+		auto& directionalLight = *DirectionalLight;
 		directionalLight.SetDirection({-0.55f, -0.7f, -1.0f});
 		directionalLight.SetColor({1.0f, 0.93f, 0.82f});
 		directionalLight.SetIntensity(1.0f);
@@ -1058,6 +1132,7 @@ class VulkanGameEngineApplication
 		const uint32_t frameIndex = frameResources.currentFrame();
 		auto &commandBuffer = frameResources.graphicsCommandBuffer(frameIndex);
 		commandBuffer.begin({});
+		recordShadowMapPass(commandBuffer, frameIndex);
 
 		// Before starting rendering, transition the swapchain image to COLOR_ATTACHMENT_OPTIMAL
 		transition_image_layout(
@@ -1146,6 +1221,64 @@ class VulkanGameEngineApplication
 			vk::ImageAspectFlagBits::eColor
 		);
 		commandBuffer.end();
+	}
+
+	void recordShadowMapPass(vk::raii::CommandBuffer& commandBuffer, uint32_t frameIndex)
+	{
+		const vk::raii::Image& shadowImage = shadowMapResources.GetImage(frameIndex);
+		const vk::Extent2D shadowExtent{
+			shadowMapResources.GetResolution(),
+			shadowMapResources.GetResolution()};
+		transition_image_layout(
+			*shadowImage,
+			vk::ImageLayout::eUndefined,
+			vk::ImageLayout::eDepthAttachmentOptimal,
+			{},
+			vk::AccessFlagBits2::eDepthStencilAttachmentWrite,
+			vk::PipelineStageFlagBits2::eTopOfPipe,
+			vk::PipelineStageFlagBits2::eEarlyFragmentTests | vk::PipelineStageFlagBits2::eLateFragmentTests,
+			vk::ImageAspectFlagBits::eDepth);
+
+		vk::ClearValue clearDepth = vk::ClearDepthStencilValue(1.0f, 0);
+		vk::RenderingAttachmentInfo depthAttachmentInfo{
+			.imageView = shadowMapResources.GetImageView(frameIndex),
+			.imageLayout = vk::ImageLayout::eDepthAttachmentOptimal,
+			.loadOp = vk::AttachmentLoadOp::eClear,
+			.storeOp = vk::AttachmentStoreOp::eStore,
+			.clearValue = clearDepth};
+		vk::RenderingInfo renderingInfo{
+			.renderArea = {.offset = {0, 0}, .extent = shadowExtent},
+			.layerCount = 1,
+			.colorAttachmentCount = 0,
+			.pDepthAttachment = &depthAttachmentInfo};
+
+		commandBuffer.beginRendering(renderingInfo);
+		commandBuffer.setViewport(
+			0,
+			vk::Viewport(
+				0.0f,
+				0.0f,
+				static_cast<float>(shadowExtent.width),
+				static_cast<float>(shadowExtent.height),
+				0.0f,
+				1.0f));
+		commandBuffer.setScissor(0, vk::Rect2D(vk::Offset2D(0, 0), shadowExtent));
+		MeshRendererInstance->RecordShadowDraws(
+			commandBuffer,
+			shadowGraphicsPipeline,
+			shadowPipelineLayout,
+			frameIndex);
+		commandBuffer.endRendering();
+
+		transition_image_layout(
+			*shadowImage,
+			vk::ImageLayout::eDepthAttachmentOptimal,
+			vk::ImageLayout::eShaderReadOnlyOptimal,
+			vk::AccessFlagBits2::eDepthStencilAttachmentWrite,
+			vk::AccessFlagBits2::eShaderSampledRead,
+			vk::PipelineStageFlagBits2::eEarlyFragmentTests | vk::PipelineStageFlagBits2::eLateFragmentTests,
+			vk::PipelineStageFlagBits2::eFragmentShader,
+			vk::ImageAspectFlagBits::eDepth);
 	}
 
 	void transition_image_layout(
@@ -1286,13 +1419,37 @@ class VulkanGameEngineApplication
 		assert(ActiveCamera != nullptr && ActiveCamera->IsActive());
 		const glm::mat4 view = ActiveCamera->GetViewMatrix();
 		const glm::mat4 proj = ActiveCamera->GetProjectionMatrix();
+		const glm::mat4 shadowViewProjection = GetShadowViewProjection();
 
 		MeshRendererInstance->UpdateUniformBuffers(
 			currentImage,
 			view,
 			proj,
 			ActiveCamera->GetPosition(),
+			shadowViewProjection,
 			time);
+	}
+
+	[[nodiscard]] glm::mat4 GetShadowViewProjection() const
+	{
+		assert(DirectionalLight != nullptr);
+		const glm::vec3 lightDirection = DirectionalLight->GetDirection();
+		const glm::vec3 lightPosition = -lightDirection * 8.0f;
+		const glm::vec3 up = glm::abs(glm::dot(lightDirection, glm::vec3(0.0f, 0.0f, 1.0f))) > 0.95f
+			? glm::vec3(0.0f, 1.0f, 0.0f)
+			: glm::vec3(0.0f, 0.0f, 1.0f);
+		const glm::mat4 lightView = glm::lookAt(
+			lightPosition,
+			glm::vec3(0.0f),
+			up);
+		const glm::mat4 lightProjection = glm::ortho(
+			-5.0f,
+			5.0f,
+			-5.0f,
+			5.0f,
+			0.1f,
+			20.0f);
+		return lightProjection * lightView;
 	}
 
 	[[nodiscard]] vk::raii::ShaderModule createShaderModule(const std::vector<char> &code) const

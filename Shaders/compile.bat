@@ -14,6 +14,7 @@ pushd "%~dp0"
     -emit-spirv-directly ^
     -fvk-use-entrypoint-name ^
     -entry vertMain ^
+    -entry shadowVertMain ^
     -entry fragMain ^
     -o slang.spv
 if errorlevel 1 goto :compile_failed
