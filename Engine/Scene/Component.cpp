@@ -1,5 +1,7 @@
 #include "Component.h"
 
+#include "SceneContext.h"
+
 #include <cassert>
 
 Component::~Component() = default;
@@ -26,6 +28,18 @@ const GameObject& Component::GetOwner() const noexcept
 	return *Owner;
 }
 
+EventDispatcher& Component::GetEventDispatcher() noexcept
+{
+	assert(Context != nullptr);
+	return Context->GetEventDispatcher();
+}
+
+const EventDispatcher& Component::GetEventDispatcher() const noexcept
+{
+	assert(Context != nullptr);
+	return Context->GetEventDispatcher();
+}
+
 void Component::OnInitialize()
 {
 }
@@ -44,24 +58,33 @@ void Component::Attach(GameObject& owner) noexcept
 	Owner = &owner;
 }
 
-void Component::Initialize()
+void Component::Initialize(SceneContext& context)
 {
 	if (CurrentState != State::Uninitialized)
 	{
 		return;
 	}
 
+	Context = &context;
 	CurrentState = State::Initializing;
 	try
 	{
 		OnInitialize();
-		CurrentState = State::Active;
+		if (CurrentState == State::Initializing)
+		{
+			CurrentState = State::Active;
+		}
 	}
 	catch (...)
 	{
-		CurrentState = State::Destroying;
-		OnDestroy();
-		CurrentState = State::Destroyed;
+		if (CurrentState != State::Destroyed)
+		{
+			CurrentState = State::Destroying;
+			ResetEventSubscriptions();
+			OnDestroy();
+			Context = nullptr;
+			CurrentState = State::Destroyed;
+		}
 		throw;
 	}
 }
@@ -81,10 +104,17 @@ void Component::Destroy() noexcept
 		return;
 	}
 
-	if (CurrentState == State::Active)
+	if (CurrentState == State::Active || CurrentState == State::Initializing)
 	{
 		CurrentState = State::Destroying;
+		ResetEventSubscriptions();
 		OnDestroy();
 	}
+	Context = nullptr;
 	CurrentState = State::Destroyed;
+}
+
+void Component::ResetEventSubscriptions() noexcept
+{
+	EventSubscriptions.clear();
 }

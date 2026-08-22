@@ -4,6 +4,10 @@
 
 #include <stdexcept>
 
+Scene::Scene() : Context(Events)
+{
+}
+
 Scene::~Scene()
 {
 	Destroy();
@@ -24,7 +28,7 @@ GameObject& Scene::CreateGameObject()
 	{
 		try
 		{
-			result.Initialize();
+			result.Initialize(Context);
 		}
 		catch (...)
 		{
@@ -55,7 +59,7 @@ void Scene::Initialize()
 	{
 		for (size_t index = 0; index < GameObjects.size(); ++index)
 		{
-			GameObjects[index]->Initialize();
+			GameObjects[index]->Initialize(Context);
 		}
 		bInitialized = true;
 	}

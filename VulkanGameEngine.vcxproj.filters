@@ -91,6 +91,9 @@
     <ClCompile Include="Engine\Scene\Scene.cpp">
       <Filter>Engine\Scene</Filter>
     </ClCompile>
+    <ClCompile Include="Engine\Scene\SceneContext.cpp">
+      <Filter>Engine\Scene</Filter>
+    </ClCompile>
     <ClCompile Include="Engine\Scene\TransformComponent.cpp">
       <Filter>Engine\Scene</Filter>
     </ClCompile>
@@ -145,6 +148,9 @@
       <Filter>Engine\Scene</Filter>
     </ClInclude>
     <ClInclude Include="Engine\Scene\Scene.h">
+      <Filter>Engine\Scene</Filter>
+    </ClInclude>
+    <ClInclude Include="Engine\Scene\SceneContext.h">
       <Filter>Engine\Scene</Filter>
     </ClInclude>
     <ClInclude Include="Engine\Scene\TransformComponent.h">

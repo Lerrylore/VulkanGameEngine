@@ -9,6 +9,7 @@
 #include <vector>
 
 class TransformComponent;
+class SceneContext;
 
 class GameObject final
 {
@@ -47,7 +48,7 @@ class GameObject final
 		{
 			try
 			{
-				result.Initialize();
+				result.Initialize(*Context);
 			}
 			catch (...)
 			{
@@ -184,7 +185,7 @@ class GameObject final
 	[[nodiscard]] const TransformComponent& GetTransform() const noexcept;
 	[[nodiscard]] bool IsInitialized() const noexcept;
 
-	void Initialize();
+	void Initialize(SceneContext& context);
 	void Update(float deltaTime);
 	void Destroy() noexcept;
 
@@ -195,6 +196,7 @@ class GameObject final
 	std::vector<std::unique_ptr<Component>> Components;
 	std::vector<Component*> PendingComponentRemovals;
 	TransformComponent* Transform = nullptr;
+	SceneContext* Context = nullptr;
 	bool bInitialized = false;
 	bool bDestroyed = false;
 	bool bUpdating = false;

@@ -1,4 +1,5 @@
 #include "GameObject.h"
+#include "SceneContext.h"
 #include "TransformComponent.h"
 
 #include <algorithm>
@@ -60,7 +61,7 @@ bool GameObject::RemoveComponent(Component& component)
 	return true;
 }
 
-void GameObject::Initialize()
+void GameObject::Initialize(SceneContext& context)
 {
 	if (bDestroyed)
 	{
@@ -71,11 +72,12 @@ void GameObject::Initialize()
 		return;
 	}
 
+	Context = &context;
 	try
 	{
 		for (size_t index = 0; index < Components.size(); ++index)
 		{
-			Components[index]->Initialize();
+			Components[index]->Initialize(context);
 		}
 		bInitialized = true;
 	}
@@ -119,6 +121,7 @@ void GameObject::Update(float deltaTime)
 				(*component)->Destroy();
 			}
 			PendingComponentRemovals.clear();
+			Context = nullptr;
 		}
 		else
 		{
@@ -135,6 +138,7 @@ void GameObject::Update(float deltaTime)
 			(*component)->Destroy();
 		}
 		PendingComponentRemovals.clear();
+		Context = nullptr;
 	}
 	else
 	{
@@ -161,6 +165,7 @@ void GameObject::Destroy() noexcept
 		(*component)->Destroy();
 	}
 	PendingComponentRemovals.clear();
+	Context = nullptr;
 }
 
 bool GameObject::IsPendingRemoval(const Component& component) const noexcept
@@ -213,6 +218,7 @@ void GameObject::RemovePendingComponents() noexcept
 		}
 		PendingComponentRemovals.clear();
 		bUpdating = false;
+		Context = nullptr;
 		return;
 	}
 
