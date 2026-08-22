@@ -29,26 +29,30 @@ void MaterialResource::SetBaseColor(const glm::vec4& baseColor) noexcept
 	BaseColor = baseColor;
 }
 
-const glm::vec3& MaterialResource::GetSpecularColor() const noexcept
+float MaterialResource::GetMetallic() const noexcept
 {
-	return SpecularColor;
+	return Metallic;
 }
 
-void MaterialResource::SetSpecularColor(const glm::vec3& specularColor) noexcept
+void MaterialResource::SetMetallic(float metallic)
 {
-	SpecularColor = specularColor;
-}
-
-float MaterialResource::GetShininess() const noexcept
-{
-	return Shininess;
-}
-
-void MaterialResource::SetShininess(float shininess)
-{
-	if (shininess <= 0.0f)
+	if (metallic < 0.0f || metallic > 1.0f)
 	{
-		throw std::invalid_argument("Material shininess must be positive");
+		throw std::invalid_argument("Material metallic value must be between 0 and 1");
 	}
-	Shininess = shininess;
+	Metallic = metallic;
+}
+
+float MaterialResource::GetRoughness() const noexcept
+{
+	return Roughness;
+}
+
+void MaterialResource::SetRoughness(float roughness)
+{
+	if (roughness <= 0.0f || roughness > 1.0f)
+	{
+		throw std::invalid_argument("Material roughness value must be greater than 0 and at most 1");
+	}
+	Roughness = roughness;
 }

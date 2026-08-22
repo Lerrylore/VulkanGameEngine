@@ -906,6 +906,8 @@ class VulkanGameEngineApplication
 	{
 		assert(meshResource.has_value());
 		assert(materialResource.has_value());
+		materialResource->SetMetallic(0.0f);
+		materialResource->SetRoughness(0.32f);
 
 		auto& lightObject = scene.CreateGameObject();
 		auto& directionalLight = lightObject.AddComponent<DirectionalLightComponent>();

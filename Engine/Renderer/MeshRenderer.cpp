@@ -30,7 +30,7 @@ struct MeshUniformBufferObject
 	glm::vec4 LightColorIntensity;
 	glm::vec4 MaterialBaseColorAmbient;
 	glm::vec4 CameraPosition;
-	glm::vec4 MaterialSpecularShininess;
+	glm::vec4 MaterialMetallicRoughness;
 };
 }
 
@@ -225,9 +225,11 @@ void MeshRenderer::UpdateUniformBuffers(
 				material.GetBaseColor().b,
 				light.GetAmbientStrength()),
 			.CameraPosition = glm::vec4(cameraPosition, 1.0f),
-			.MaterialSpecularShininess = glm::vec4(
-				material.GetSpecularColor(),
-				material.GetShininess())};
+			.MaterialMetallicRoughness = glm::vec4(
+				material.GetMetallic(),
+				material.GetRoughness(),
+				0.0f,
+				0.0f)};
 		std::memcpy(
 			drawResources.UniformBuffersMapped[frameIndex],
 			&uniformBuffer,
