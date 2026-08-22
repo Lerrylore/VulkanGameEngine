@@ -1,0 +1,58 @@
+#pragma once
+
+#include "../Vulkan/VulkanContext.h"
+
+#include <glm/mat4x4.hpp>
+
+#include <cstddef>
+#include <cstdint>
+#include <vector>
+
+class Scene;
+
+class MeshRenderer final
+{
+  public:
+	MeshRenderer(
+		VulkanContext& vulkan,
+		const vk::raii::DescriptorSetLayout& descriptorSetLayout,
+		uint32_t framesInFlight);
+	~MeshRenderer();
+
+	MeshRenderer(const MeshRenderer&) = delete;
+	MeshRenderer& operator=(const MeshRenderer&) = delete;
+	MeshRenderer(MeshRenderer&&) = delete;
+	MeshRenderer& operator=(MeshRenderer&&) = delete;
+
+	// Build is intentionally one-shot and must happen before frame submission.
+	// The Scene structure must remain static after this call until frame-safe
+	// component change tracking is introduced.
+	void Build(const Scene& scene);
+	// The caller must wait for this frame's fence before writing its mapped UBOs.
+	void UpdateUniformBuffers(
+		uint32_t frameIndex,
+		const glm::mat4& view,
+		const glm::mat4& projection,
+		float elapsedTime);
+	void RecordDraws(
+		vk::raii::CommandBuffer& commandBuffer,
+		const vk::raii::Pipeline& pipeline,
+		const vk::raii::PipelineLayout& pipelineLayout,
+		uint32_t frameIndex) const;
+
+	[[nodiscard]] std::size_t GetDrawCount() const noexcept;
+
+  private:
+	struct MeshDrawResources;
+
+	void ValidateFrameIndex(uint32_t frameIndex) const;
+
+	VulkanContext& Vulkan;
+	const vk::raii::DescriptorSetLayout& DescriptorSetLayout;
+	uint32_t FrameCount = 0;
+
+	// Draw resources contain the descriptor sets and are destroyed first.
+	vk::raii::DescriptorPool DescriptorPool = nullptr;
+	std::vector<MeshDrawResources> DrawResources;
+	bool bBuilt = false;
+};

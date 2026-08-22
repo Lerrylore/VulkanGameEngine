@@ -58,6 +58,9 @@
     <ClCompile Include="Engine\Renderer\FrameResources.cpp">
       <Filter>Engine\Renderer</Filter>
     </ClCompile>
+    <ClCompile Include="Engine\Renderer\MeshRenderer.cpp">
+      <Filter>Engine\Renderer</Filter>
+    </ClCompile>
     <ClCompile Include="Engine\Resources\ImageAllocation.cpp">
       <Filter>Engine\Resources</Filter>
     </ClCompile>
@@ -121,6 +124,9 @@
       <Filter>Engine\Renderer</Filter>
     </ClInclude>
     <ClInclude Include="Engine\Renderer\FrameResources.h">
+      <Filter>Engine\Renderer</Filter>
+    </ClInclude>
+    <ClInclude Include="Engine\Renderer\MeshRenderer.h">
       <Filter>Engine\Renderer</Filter>
     </ClInclude>
     <ClInclude Include="Engine\Resources\ImageAllocation.h">

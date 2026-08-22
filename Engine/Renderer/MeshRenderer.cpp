@@ -1,0 +1,241 @@
+#include "MeshRenderer.h"
+
+#include "../Resources/BufferAllocation.h"
+#include "../Resources/MaterialResource.h"
+#include "../Resources/MeshResource.h"
+#include "../Resources/TextureResource.h"
+#include "../Scene/MeshComponent.h"
+#include "../Scene/Scene.h"
+#include "../Scene/TransformComponent.h"
+
+#include <glm/gtc/matrix_transform.hpp>
+
+#include <array>
+#include <cstring>
+#include <limits>
+#include <stdexcept>
+#include <utility>
+
+namespace
+{
+struct MeshUniformBufferObject
+{
+	glm::mat4 Model;
+	glm::mat4 View;
+	glm::mat4 Projection;
+};
+}
+
+struct MeshRenderer::MeshDrawResources
+{
+	explicit MeshDrawResources(const MeshComponent& component) noexcept
+		: Component(&component)
+	{
+	}
+
+	~MeshDrawResources()
+	{
+		for (std::size_t index = 0; index < UniformBuffersMapped.size(); ++index)
+		{
+			UniformBuffers[index].memory().unmapMemory();
+		}
+	}
+
+	MeshDrawResources(const MeshDrawResources&) = delete;
+	MeshDrawResources& operator=(const MeshDrawResources&) = delete;
+
+	MeshDrawResources(MeshDrawResources&& other) noexcept
+		: Component(std::exchange(other.Component, nullptr))
+	{
+		UniformBuffers.swap(other.UniformBuffers);
+		UniformBuffersMapped.swap(other.UniformBuffersMapped);
+		DescriptorSets.swap(other.DescriptorSets);
+	}
+
+	MeshDrawResources& operator=(MeshDrawResources&&) = delete;
+
+	const MeshComponent* Component = nullptr;
+	std::vector<BufferAllocation> UniformBuffers;
+	std::vector<void*> UniformBuffersMapped;
+	std::vector<vk::raii::DescriptorSet> DescriptorSets;
+};
+
+MeshRenderer::MeshRenderer(
+	VulkanContext& vulkan,
+	const vk::raii::DescriptorSetLayout& descriptorSetLayout,
+	uint32_t framesInFlight)
+	: Vulkan(vulkan), DescriptorSetLayout(descriptorSetLayout), FrameCount(framesInFlight)
+{
+	if (FrameCount == 0)
+	{
+		throw std::invalid_argument("MeshRenderer requires at least one frame in flight");
+	}
+}
+
+MeshRenderer::~MeshRenderer() = default;
+
+void MeshRenderer::Build(const Scene& scene)
+{
+	if (bBuilt)
+	{
+		throw std::logic_error("MeshRenderer cannot rebuild while its static Scene snapshot is in use");
+	}
+
+	std::vector<const MeshComponent*> components;
+	scene.ForEachComponent<MeshComponent>([&components](const MeshComponent& component)
+	{
+		components.push_back(&component);
+	});
+
+	if (components.empty())
+	{
+		throw std::logic_error("MeshRenderer requires at least one MeshComponent");
+	}
+	if (components.size() > std::numeric_limits<uint32_t>::max() / FrameCount)
+	{
+		throw std::overflow_error("MeshRenderer descriptor count exceeds Vulkan limits");
+	}
+
+	const uint32_t descriptorCount = static_cast<uint32_t>(components.size()) * FrameCount;
+	const std::array<vk::DescriptorPoolSize, 2> poolSizes{{
+		{.type = vk::DescriptorType::eUniformBuffer, .descriptorCount = descriptorCount},
+		{.type = vk::DescriptorType::eCombinedImageSampler, .descriptorCount = descriptorCount}}};
+	const vk::DescriptorPoolCreateInfo poolInfo{
+		.flags = vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet,
+		.maxSets = descriptorCount,
+		.poolSizeCount = static_cast<uint32_t>(poolSizes.size()),
+		.pPoolSizes = poolSizes.data()};
+	DescriptorPool = vk::raii::DescriptorPool(Vulkan.device(), poolInfo);
+
+	try
+	{
+		DrawResources.reserve(components.size());
+		for (const MeshComponent* component : components)
+		{
+			DrawResources.emplace_back(*component);
+			auto& drawResources = DrawResources.back();
+			drawResources.UniformBuffers.reserve(FrameCount);
+			drawResources.UniformBuffersMapped.reserve(FrameCount);
+
+			for (uint32_t frameIndex = 0; frameIndex < FrameCount; ++frameIndex)
+			{
+				drawResources.UniformBuffers.emplace_back(
+					Vulkan,
+					sizeof(MeshUniformBufferObject),
+					vk::BufferUsageFlagBits::eUniformBuffer,
+					vk::MemoryPropertyFlagBits::eHostVisible |
+						vk::MemoryPropertyFlagBits::eHostCoherent);
+				void* mappedMemory = drawResources.UniformBuffers.back().memory().mapMemory(
+					0,
+					sizeof(MeshUniformBufferObject));
+				drawResources.UniformBuffersMapped.push_back(mappedMemory);
+			}
+
+			const std::vector<vk::DescriptorSetLayout> layouts(FrameCount, *DescriptorSetLayout);
+			const vk::DescriptorSetAllocateInfo allocateInfo{
+				.descriptorPool = DescriptorPool,
+				.descriptorSetCount = static_cast<uint32_t>(layouts.size()),
+				.pSetLayouts = layouts.data()};
+			drawResources.DescriptorSets = Vulkan.device().allocateDescriptorSets(allocateInfo);
+
+			const auto& baseColorTexture = component->GetMaterial().GetBaseColorTexture();
+			for (uint32_t frameIndex = 0; frameIndex < FrameCount; ++frameIndex)
+			{
+				const vk::DescriptorBufferInfo bufferInfo{
+					.buffer = *drawResources.UniformBuffers[frameIndex].buffer(),
+					.offset = 0,
+					.range = sizeof(MeshUniformBufferObject)};
+				const vk::DescriptorImageInfo imageInfo{
+					.sampler = *baseColorTexture.sampler(),
+					.imageView = *baseColorTexture.imageView(),
+					.imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal};
+				const std::array<vk::WriteDescriptorSet, 2> writes{{
+					{.dstSet = drawResources.DescriptorSets[frameIndex],
+					 .dstBinding = 0,
+					 .descriptorCount = 1,
+					 .descriptorType = vk::DescriptorType::eUniformBuffer,
+					 .pBufferInfo = &bufferInfo},
+					{.dstSet = drawResources.DescriptorSets[frameIndex],
+					 .dstBinding = 1,
+					 .descriptorCount = 1,
+					 .descriptorType = vk::DescriptorType::eCombinedImageSampler,
+					 .pImageInfo = &imageInfo}}};
+				Vulkan.device().updateDescriptorSets(writes, {});
+			}
+		}
+		bBuilt = true;
+	}
+	catch (...)
+	{
+		DrawResources.clear();
+		DescriptorPool = nullptr;
+		throw;
+	}
+}
+
+void MeshRenderer::UpdateUniformBuffers(
+	uint32_t frameIndex,
+	const glm::mat4& view,
+	const glm::mat4& projection,
+	float elapsedTime)
+{
+	ValidateFrameIndex(frameIndex);
+
+	for (std::size_t drawIndex = 0; drawIndex < DrawResources.size(); ++drawIndex)
+	{
+		auto& drawResources = DrawResources[drawIndex];
+		const float direction = drawIndex % 2 == 0 ? 1.0f : -1.0f;
+		const MeshUniformBufferObject uniformBuffer{
+			.Model = drawResources.Component->GetTransform().ModelMatrix() * glm::rotate(
+				glm::mat4(1.0f),
+				direction * elapsedTime * glm::radians(35.0f),
+				glm::vec3(0.0f, 0.0f, 1.0f)),
+			.View = view,
+			.Projection = projection};
+		std::memcpy(
+			drawResources.UniformBuffersMapped[frameIndex],
+			&uniformBuffer,
+			sizeof(uniformBuffer));
+	}
+}
+
+void MeshRenderer::RecordDraws(
+	vk::raii::CommandBuffer& commandBuffer,
+	const vk::raii::Pipeline& pipeline,
+	const vk::raii::PipelineLayout& pipelineLayout,
+	uint32_t frameIndex) const
+{
+	ValidateFrameIndex(frameIndex);
+	commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, *pipeline);
+
+	for (const auto& drawResources : DrawResources)
+	{
+		const auto& mesh = drawResources.Component->GetMesh();
+		commandBuffer.bindVertexBuffers(0, *mesh.buffer(), {mesh.vertexOffset()});
+		commandBuffer.bindIndexBuffer(*mesh.buffer(), mesh.indexOffset(), mesh.indexType());
+		commandBuffer.bindDescriptorSets(
+			vk::PipelineBindPoint::eGraphics,
+			*pipelineLayout,
+			0,
+			*drawResources.DescriptorSets[frameIndex],
+			nullptr);
+		commandBuffer.drawIndexed(mesh.indexCount(), 1, 0, 0, 0);
+	}
+}
+
+std::size_t MeshRenderer::GetDrawCount() const noexcept
+{
+	return DrawResources.size();
+}
+
+void MeshRenderer::ValidateFrameIndex(uint32_t frameIndex) const
+{
+	if (!bBuilt)
+	{
+		throw std::logic_error("MeshRenderer must be built before use");
+	}
+	if (frameIndex >= FrameCount)
+	{
+		throw std::out_of_range("MeshRenderer frame index is out of range");
+	}
+}

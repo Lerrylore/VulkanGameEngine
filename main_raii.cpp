@@ -19,6 +19,7 @@
 
 #include "Engine/Platform/Window.h"
 #include "Engine/Renderer/FrameResources.h"
+#include "Engine/Renderer/MeshRenderer.h"
 #include "Engine/Renderer/RenderTargetResources.h"
 #include "Engine/Renderer/SwapchainResources.h"
 #include "Engine/Events/EventBus.h"
@@ -43,7 +44,6 @@ constexpr uint32_t HEIGHT               = 600;
 constexpr uint32_t PARTICLE_COUNT       = 8192;
 constexpr uint32_t COMPUTE_WORKGROUP_SIZE = 256;
 constexpr int      MAX_FRAMES_IN_FLIGHT = 2;
-constexpr int      MAX_OBJECTS          = 3;
 const std::string  MODEL_PATH = "Models/viking_room.obj";
 const std::string  TEXTURE_PATH = "Textures/viking_room.png";
 
@@ -97,21 +97,6 @@ struct VertexHash
 		combine(vertex.texCoord.y);
 		return seed;
 	}
-};
-
-struct UniformBufferObject
-{
-	glm::mat4 model;
-	glm::mat4 view;
-	glm::mat4 proj;
-};
-
-struct RenderObjectResources
-{
-	MeshComponent*                        Component = nullptr;
-	std::vector<BufferAllocation>        UniformBuffers;
-	std::vector<void*>                   UniformBuffersMapped;
-	std::vector<vk::raii::DescriptorSet> DescriptorSets;
 };
 
 struct alignas(16) ComputeUniformBufferObject
@@ -193,8 +178,8 @@ class VulkanGameEngineApplication
 	ServiceLocator Services;
 	Scene scene{Services};
 	CameraComponent* ActiveCamera = nullptr;
-	vk::raii::DescriptorPool descriptorPool = nullptr;
-	std::array<RenderObjectResources, MAX_OBJECTS> RenderObjects;
+	// Declared after Scene and its resources so it is destroyed before them.
+	std::optional<MeshRenderer> MeshRendererInstance;
 	vk::raii::DescriptorPool computeDescriptorPool = nullptr;
 	std::vector<vk::raii::DescriptorSet> computeDescriptorSets;
 
@@ -219,11 +204,9 @@ class VulkanGameEngineApplication
 		createGeometryBuffer();
 		createParticleBuffers();
 		setupGameObjects();
-		DiscoverRenderObjects();
-		createUniformBuffers();
+		MeshRendererInstance.emplace(vulkan, descriptorSetLayout, MAX_FRAMES_IN_FLIGHT);
+		MeshRendererInstance->Build(scene);
 		createComputeUniformBuffers();
-		createDescriptorPool();
-		createDescriptorSets();
 		createComputeDescriptorPool();
 		createComputeDescriptorSets();
 		scene.Initialize();
@@ -932,53 +915,6 @@ class VulkanGameEngineApplication
 		ActiveCamera->SetClipPlanes(0.1f, 10.0f);
 	}
 
-	void DiscoverRenderObjects()
-	{
-		for (auto& renderObject : RenderObjects)
-		{
-			renderObject.Component = nullptr;
-		}
-
-		size_t renderObjectCount = 0;
-		scene.ForEachComponent<MeshComponent>([this, &renderObjectCount](MeshComponent& component)
-		{
-			if (renderObjectCount >= RenderObjects.size())
-			{
-				throw std::logic_error("Scene contains more MeshComponents than the renderer supports");
-			}
-
-			RenderObjects[renderObjectCount].Component = &component;
-			++renderObjectCount;
-		});
-
-		if (renderObjectCount != RenderObjects.size())
-		{
-			throw std::logic_error("Scene must contain exactly three MeshComponents");
-		}
-	}
-
-	void createUniformBuffers()
-	{
-		for (auto &renderObject : RenderObjects)
-		{
-			assert(renderObject.UniformBuffers.empty() && renderObject.UniformBuffersMapped.empty());
-			renderObject.UniformBuffers.reserve(MAX_FRAMES_IN_FLIGHT);
-			renderObject.UniformBuffersMapped.reserve(MAX_FRAMES_IN_FLIGHT);
-
-			for (size_t frame = 0; frame < MAX_FRAMES_IN_FLIGHT; ++frame)
-			{
-				constexpr vk::DeviceSize bufferSize = sizeof(UniformBufferObject);
-				renderObject.UniformBuffers.emplace_back(
-					vulkan,
-					bufferSize,
-					vk::BufferUsageFlagBits::eUniformBuffer,
-					vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent);
-				renderObject.UniformBuffersMapped.emplace_back(
-					renderObject.UniformBuffers.back().memory().mapMemory(0, bufferSize));
-			}
-		}
-	}
-
 	void createComputeUniformBuffers()
 	{
 		const vk::DeviceSize bufferSize = sizeof(ComputeUniformBufferObject);
@@ -995,56 +931,6 @@ class VulkanGameEngineApplication
 				vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent);
 			computeUniformBuffersMapped.emplace_back(
 				computeUniformBuffers.back().memory().mapMemory(0, bufferSize));
-		}
-	}
-
-	void createDescriptorPool()
-	{
-		constexpr uint32_t descriptorCount = MAX_OBJECTS * MAX_FRAMES_IN_FLIGHT;
-		std::array<vk::DescriptorPoolSize, 2> poolSize{ {{.type = vk::DescriptorType::eUniformBuffer, .descriptorCount = descriptorCount},
-												{.type = vk::DescriptorType::eCombinedImageSampler, .descriptorCount = descriptorCount}} };
-
-		vk::DescriptorPoolCreateInfo          poolInfo{ .flags = vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet,
-												   .maxSets = descriptorCount,
-													   .poolSizeCount = static_cast<uint32_t>(poolSize.size()),
-													   .pPoolSizes = poolSize.data() };
-
-		descriptorPool = vk::raii::DescriptorPool(device, poolInfo);
-	}
-
-	void createDescriptorSets()
-	{
-		for (auto &renderObject : RenderObjects)
-		{
-			auto& baseColorTexture = renderObject.Component->GetMaterial().GetBaseColorTexture();
-			std::vector<vk::DescriptorSetLayout> layouts(MAX_FRAMES_IN_FLIGHT, *descriptorSetLayout);
-			vk::DescriptorSetAllocateInfo allocInfo{ .descriptorPool = descriptorPool,
-													 .descriptorSetCount = static_cast<uint32_t>(layouts.size()),
-													 .pSetLayouts = layouts.data() };
-			renderObject.DescriptorSets = device.allocateDescriptorSets(allocInfo);
-
-			for (size_t frame = 0; frame < MAX_FRAMES_IN_FLIGHT; ++frame)
-			{
-				vk::DescriptorBufferInfo bufferInfo{ .buffer = *renderObject.UniformBuffers[frame].buffer(), .offset = 0, .range = sizeof(UniformBufferObject) };
-				vk::DescriptorImageInfo imageInfo{
-					.sampler = *baseColorTexture.sampler(),
-					.imageView = *baseColorTexture.imageView(),
-					.imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal};
-
-				std::array<vk::WriteDescriptorSet, 2> descriptorWrites{ {{.dstSet = renderObject.DescriptorSets[frame],
-																	 .dstBinding = 0,
-																	 .dstArrayElement = 0,
-																	 .descriptorCount = 1,
-																	 .descriptorType = vk::DescriptorType::eUniformBuffer,
-																	 .pBufferInfo = &bufferInfo},
-																	{.dstSet = renderObject.DescriptorSets[frame],
-																	 .dstBinding = 1,
-																	 .dstArrayElement = 0,
-																	 .descriptorCount = 1,
-																	 .descriptorType = vk::DescriptorType::eCombinedImageSampler,
-																	 .pImageInfo = &imageInfo}} };
-				device.updateDescriptorSets(descriptorWrites, {});
-			}
 		}
 	}
 
@@ -1204,26 +1090,14 @@ class VulkanGameEngineApplication
 			.pDepthAttachment = &depthAttachmentInfo};
 
 		commandBuffer.beginRendering(renderingInfo);
-		commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, *graphicsPipeline);
 		commandBuffer.setViewport(0, vk::Viewport(0.0f, 0.0f, static_cast<float>(swapChainExtent.width), static_cast<float>(swapChainExtent.height), 0.0f, 1.0f));
 		commandBuffer.setScissor(0, vk::Rect2D(vk::Offset2D(0, 0), swapChainExtent));
 
-		// Pipeline and texture are shared. Each MeshComponent selects the mesh,
-		// while its descriptor set selects the per-object transform buffer.
-		for (const auto &renderObject : RenderObjects)
-		{
-			assert(renderObject.Component != nullptr);
-			auto& mesh = renderObject.Component->GetMesh();
-			commandBuffer.bindVertexBuffers(0, *mesh.buffer(), {mesh.vertexOffset()});
-			commandBuffer.bindIndexBuffer(*mesh.buffer(), mesh.indexOffset(), mesh.indexType());
-			commandBuffer.bindDescriptorSets(
-				vk::PipelineBindPoint::eGraphics,
-				pipelineLayout,
-				0,
-				*renderObject.DescriptorSets[frameIndex],
-				nullptr);
-			commandBuffer.drawIndexed(mesh.indexCount(), 1, 0, 0, 0);
-		}
+		MeshRendererInstance->RecordDraws(
+			commandBuffer,
+			graphicsPipeline,
+			pipelineLayout,
+			frameIndex);
 
 		commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, *particleGraphicsPipeline);
 		commandBuffer.bindVertexBuffers(0, *particleBuffers[frameIndex].buffer(), {0});
@@ -1382,22 +1256,7 @@ class VulkanGameEngineApplication
 		const glm::mat4 view = ActiveCamera->GetViewMatrix();
 		const glm::mat4 proj = ActiveCamera->GetProjectionMatrix();
 
-		for (size_t objectIndex = 0; objectIndex < RenderObjects.size(); ++objectIndex)
-		{
-			const auto &renderObject = RenderObjects[objectIndex];
-			assert(renderObject.Component != nullptr);
-			const float direction = objectIndex % 2 == 0 ? 1.0f : -1.0f;
-
-			UniformBufferObject ubo{};
-			ubo.model = renderObject.Component->GetTransform().ModelMatrix() * glm::rotate(
-				glm::mat4(1.0f),
-				direction * time * glm::radians(35.0f),
-				glm::vec3(0.0f, 0.0f, 1.0f));
-			ubo.view = view;
-			ubo.proj = proj;
-
-			memcpy(renderObject.UniformBuffersMapped[currentImage], &ubo, sizeof(ubo));
-		}
+		MeshRendererInstance->UpdateUniformBuffers(currentImage, view, proj, time);
 	}
 
 	[[nodiscard]] vk::raii::ShaderModule createShaderModule(const std::vector<char> &code) const
