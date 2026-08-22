@@ -3,7 +3,6 @@
 #include <array>
 #include <cstdlib>
 #include <cstring>
-#include <fstream>
 #include <iostream>
 #include <limits>
 #include <memory>
@@ -29,6 +28,7 @@
 #include "Engine/Renderer/SwapchainResources.h"
 #include "Engine/Events/EventBus.h"
 #include "Engine/Resources/BufferAllocation.h"
+#include "Engine/Resources/BinaryFileLoader.h"
 #include "Engine/Resources/MaterialResource.h"
 #include "Engine/Resources/MeshResource.h"
 #include "Engine/Resources/TextureResource.h"
@@ -296,7 +296,7 @@ class VulkanGameEngineApplication
 
 	void createGraphicsPipeline()
 	{
-		vk::raii::ShaderModule shaderModule = createShaderModule(readFile("Shaders/slang.spv"));
+		vk::raii::ShaderModule shaderModule = createShaderModule(BinaryFileLoader::Load("Shaders/slang.spv"));
 
 		vk::PipelineShaderStageCreateInfo vertShaderStageInfo{.stage = vk::ShaderStageFlagBits::eVertex, .module = shaderModule, .pName = "vertMain"};
 		vk::PipelineShaderStageCreateInfo fragShaderStageInfo{.stage = vk::ShaderStageFlagBits::eFragment, .module = shaderModule, .pName = "fragMain"};
@@ -363,7 +363,7 @@ class VulkanGameEngineApplication
 
 	void createShadowGraphicsPipeline()
 	{
-		vk::raii::ShaderModule shaderModule = createShaderModule(readFile("Shaders/slang.spv"));
+		vk::raii::ShaderModule shaderModule = createShaderModule(BinaryFileLoader::Load("Shaders/slang.spv"));
 		vk::PipelineShaderStageCreateInfo vertexShaderStageInfo{
 			.stage = vk::ShaderStageFlagBits::eVertex,
 			.module = shaderModule,
@@ -429,7 +429,7 @@ class VulkanGameEngineApplication
 
 	void createParticleGraphicsPipeline()
 	{
-		vk::raii::ShaderModule shaderModule = createShaderModule(readFile("Shaders/particles.spv"));
+		vk::raii::ShaderModule shaderModule = createShaderModule(BinaryFileLoader::Load("Shaders/particles.spv"));
 		std::array shaderStages{
 			vk::PipelineShaderStageCreateInfo{.stage = vk::ShaderStageFlagBits::eVertex, .module = shaderModule, .pName = "particleVertMain"},
 			vk::PipelineShaderStageCreateInfo{.stage = vk::ShaderStageFlagBits::eFragment, .module = shaderModule, .pName = "particleFragMain"}};
@@ -498,7 +498,7 @@ class VulkanGameEngineApplication
 
 	void createComputePipeline()
 	{
-		vk::raii::ShaderModule shaderModule = createShaderModule(readFile("Shaders/compute.spv"));
+		vk::raii::ShaderModule shaderModule = createShaderModule(BinaryFileLoader::Load("Shaders/compute.spv"));
 		vk::PipelineShaderStageCreateInfo shaderStage{
 			.stage = vk::ShaderStageFlagBits::eCompute,
 			.module = shaderModule,
@@ -1634,19 +1634,6 @@ class VulkanGameEngineApplication
 		return shaderModule;
 	}
 
-	static std::vector<char> readFile(const std::string &filename)
-	{
-		std::ifstream file(filename, std::ios::ate | std::ios::binary);
-		if (!file.is_open())
-		{
-			throw std::runtime_error("failed to open file!");
-		}
-		std::vector<char> buffer(file.tellg());
-		file.seekg(0, std::ios::beg);
-		file.read(buffer.data(), static_cast<std::streamsize>(buffer.size()));
-		file.close();
-		return buffer;
-	}
 };
 
 int main()

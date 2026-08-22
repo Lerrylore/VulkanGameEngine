@@ -141,6 +141,7 @@
     <ClCompile Include="Engine\Renderer\ShadowMapResources.cpp" />
     <ClCompile Include="Engine\Renderer\SwapchainResources.cpp" />
     <ClCompile Include="Engine\Resources\BufferAllocation.cpp" />
+    <ClCompile Include="Engine\Resources\BinaryFileLoader.cpp" />
     <ClCompile Include="Engine\Resources\ImageAllocation.cpp" />
     <ClCompile Include="Engine\Resources\MaterialResource.cpp" />
     <ClCompile Include="Engine\Resources\MeshResource.cpp" />
@@ -171,6 +172,7 @@
     <ClInclude Include="Engine\Renderer\ShadowMapResources.h" />
     <ClInclude Include="Engine\Renderer\SwapchainResources.h" />
     <ClInclude Include="Engine\Resources\BufferAllocation.h" />
+    <ClInclude Include="Engine\Resources\BinaryFileLoader.h" />
     <ClInclude Include="Engine\Resources\ImageAllocation.h" />
     <ClInclude Include="Engine\Resources\MaterialResource.h" />
     <ClInclude Include="Engine\Resources\MeshResource.h" />
