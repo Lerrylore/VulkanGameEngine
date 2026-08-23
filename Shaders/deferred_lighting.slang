@@ -90,7 +90,10 @@ FSOutput deferredVertMain(uint vertexId : SV_VertexID)
         float2(-1.0, 3.0)};
     FSOutput output;
     output.pos = float4(positions[vertexId], 0.0, 1.0);
-    output.uv = positions[vertexId] * float2(0.5, -0.5) + 0.5;
+    // The camera projection already applies Vulkan's Y correction. Keep the
+    // fullscreen UV origin aligned with the G-buffer instead of flipping it a
+    // second time here.
+    output.uv = positions[vertexId] * 0.5 + 0.5;
     return output;
 }
 

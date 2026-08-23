@@ -191,7 +191,8 @@ void ForwardRenderer::RecordForwardPassContents(
 	uint32_t frameIndex,
 	const vk::raii::Pipeline& graphicsPipeline,
 	const vk::raii::PipelineLayout& graphicsPipelineLayout,
-	ParticleDrawCallback particleDraw)
+	ParticleDrawCallback particleDraw,
+	bool loadDepth)
 {
 	const vk::ClearValue clearColor = vk::ClearColorValue(0.0f, 0.0f, 0.0f, 1.0f);
 	const vk::ClearValue clearDepth = vk::ClearDepthStencilValue(1.0f, 0);
@@ -207,7 +208,7 @@ void ForwardRenderer::RecordForwardPassContents(
 	const vk::RenderingAttachmentInfo depthAttachment{
 		.imageView = RenderTargets.depthImageView(),
 		.imageLayout = vk::ImageLayout::eDepthAttachmentOptimal,
-		.loadOp = vk::AttachmentLoadOp::eClear,
+		.loadOp = loadDepth ? vk::AttachmentLoadOp::eLoad : vk::AttachmentLoadOp::eClear,
 		.storeOp = vk::AttachmentStoreOp::eDontCare,
 		.clearValue = clearDepth};
 	const vk::RenderingInfo renderingInfo{

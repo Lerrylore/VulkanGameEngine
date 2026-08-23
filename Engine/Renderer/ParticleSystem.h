@@ -49,6 +49,11 @@ class ParticleSystem final
 	void Update(uint32_t frameIndex, float deltaTime);
 
 	void RecordComputeCommandBuffer(uint32_t frameIndex);
+	// Records only the compute work into an already-recording command buffer.
+	// The frame render graph owns the buffer dependency barrier.
+	void RecordComputeCommands(
+		vk::raii::CommandBuffer& commandBuffer,
+		uint32_t frameIndex);
 	void RecordDraw(vk::raii::CommandBuffer& commandBuffer, uint32_t frameIndex) const;
 
 	void RebuildGraphicsPipeline(
@@ -61,6 +66,8 @@ class ParticleSystem final
 	[[nodiscard]] uint32_t ParticleCount() const noexcept;
 	[[nodiscard]] uint32_t ComputeWorkgroupSize() const noexcept;
 	[[nodiscard]] uint32_t DispatchGroupCount() const noexcept;
+	[[nodiscard]] vk::Buffer ParticleBuffer(uint32_t frameIndex) const;
+	[[nodiscard]] vk::DeviceSize ParticleBufferSize() const noexcept;
 
   private:
 	struct Particle

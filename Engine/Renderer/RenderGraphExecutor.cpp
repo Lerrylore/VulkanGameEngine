@@ -10,9 +10,7 @@ RenderGraphExecutor::RenderGraphExecutor(const RenderGraph& graph) noexcept
 void RenderGraphExecutor::BindImage(
 	RenderGraph::ImageHandle resource,
 	vk::Image image,
-	vk::ImageAspectFlags aspectFlags,
-	vk::ImageLayout initialLayout,
-	vk::ImageLayout finalLayout)
+	vk::ImageAspectFlags aspectFlags)
 {
 	// GetImageDescription also validates that the handle belongs to Graph. We
 	// intentionally do not retain a pointer to the graph's image record.
@@ -26,7 +24,7 @@ void RenderGraphExecutor::BindImage(
 		throw std::invalid_argument(
 			"RenderGraphExecutor image binding has an empty subresource range");
 	}
-	if (finalLayout == vk::ImageLayout::eUndefined)
+	if (description.FinalLayout == vk::ImageLayout::eUndefined)
 	{
 		throw std::invalid_argument(
 			"RenderGraphExecutor final image layout cannot be eUndefined");
@@ -34,9 +32,20 @@ void RenderGraphExecutor::BindImage(
 
 	ImageBindings[resource.Index] = ImageBinding{
 		.Image = image,
-		.AspectFlags = aspectFlags,
-		.InitialLayout = initialLayout,
-		.FinalLayout = finalLayout};
+		.AspectFlags = aspectFlags};
+}
+
+void RenderGraphExecutor::BindBuffer(
+	RenderGraph::BufferHandle resource,
+	vk::Buffer buffer)
+{
+	[[maybe_unused]] const auto& description = Graph.GetBufferDescription(resource);
+	if (!resource.IsValid() || buffer == nullptr)
+	{
+		throw std::invalid_argument("RenderGraphExecutor buffer binding is invalid");
+	}
+
+	BufferBindings[resource.Index] = BufferBinding{.Buffer = buffer};
 }
 
 void RenderGraphExecutor::Execute(
@@ -71,10 +80,22 @@ void RenderGraphExecutor::Execute(
 			}
 			TranslateUsage(passDescription.Type, use, binding->second.AspectFlags);
 		}
+		for (const auto& use : passDescription.BufferUses)
+		{
+			if (BufferBindings.find(use.Resource.Index) == BufferBindings.end())
+			{
+				throw std::invalid_argument(
+					"RenderGraphExecutor has no Vulkan buffer binding for resource '" +
+					Graph.GetBufferName(use.Resource) + "'");
+			}
+			TranslateUsage(passDescription.Type, use);
+		}
 	}
 
 	std::unordered_map<std::uint32_t, ImageState> states;
 	states.reserve(ImageBindings.size());
+	std::unordered_map<std::uint32_t, BufferState> bufferStates;
+	bufferStates.reserve(BufferBindings.size());
 
 	for (const auto pass : compilation.ExecutionOrder)
 	{
@@ -96,7 +117,7 @@ void RenderGraphExecutor::Execute(
 					.Resource = use.Resource,
 					.StageMask = vk::PipelineStageFlagBits2::eTopOfPipe,
 					.AccessMask = {},
-					.Layout = binding.InitialLayout,
+					.Layout = description.InitialLayout,
 					.HasBeenUsed = false,
 					.LastUseWrites = false};
 				stateIterator = states.emplace(use.Resource.Index, initialState).first;
@@ -134,6 +155,51 @@ void RenderGraphExecutor::Execute(
 			state.LastUseWrites = usage.Writes;
 		}
 
+		for (const auto& use : passDescription.BufferUses)
+		{
+			const auto bindingIterator = BufferBindings.find(use.Resource.Index);
+			const auto& binding = bindingIterator->second;
+			const auto usage = TranslateUsage(passDescription.Type, use);
+
+			auto stateIterator = bufferStates.find(use.Resource.Index);
+			if (stateIterator == bufferStates.end())
+			{
+				BufferState initialState{
+					.Resource = use.Resource,
+					.StageMask = vk::PipelineStageFlagBits2::eTopOfPipe,
+					.AccessMask = {},
+					.HasBeenUsed = false,
+					.LastUseWrites = false};
+				stateIterator = bufferStates.emplace(use.Resource.Index, initialState).first;
+			}
+
+			auto& state = stateIterator->second;
+			const bool stateChanged =
+				state.StageMask != usage.StageMask ||
+				state.AccessMask != usage.AccessMask;
+			const bool needsMemoryDependency =
+				state.HasBeenUsed && (state.LastUseWrites || usage.Writes);
+			const bool needsBarrier = !state.HasBeenUsed
+				? state.AccessMask != usage.AccessMask
+				: stateChanged || needsMemoryDependency;
+
+			if (needsBarrier)
+			{
+				EmitBufferBarrier(
+					commandBuffer,
+					binding,
+					state.StageMask,
+					state.AccessMask,
+					usage.StageMask,
+					usage.AccessMask);
+			}
+
+			state.StageMask = usage.StageMask;
+			state.AccessMask = usage.AccessMask;
+			state.HasBeenUsed = true;
+			state.LastUseWrites = usage.Writes;
+		}
+
 		// The callback owns the dynamic-rendering scope. The executor only
 		// guarantees that declared image states are ready before it is called.
 		passCallback(commandBuffer, pass);
@@ -148,21 +214,22 @@ void RenderGraphExecutor::Execute(
 		}
 
 		const auto& binding = bindingIterator->second;
-		if (state.Layout == binding.FinalLayout)
+		const auto& description = Graph.GetImageDescription(state.Resource);
+		if (state.Layout == description.FinalLayout)
 		{
 			continue;
 		}
 
 		EmitImageBarrier(
 			commandBuffer,
-			Graph.GetImageDescription(state.Resource),
+			description,
 			binding,
 			state.StageMask,
 			state.AccessMask,
 			vk::PipelineStageFlagBits2::eBottomOfPipe,
 			{},
 			state.Layout,
-			binding.FinalLayout);
+			description.FinalLayout);
 	}
 }
 
@@ -175,6 +242,17 @@ RenderGraphExecutor::UsageState RenderGraphExecutor::TranslateUsage(
 		.StageMask = TranslateStage(passType, use.Usage),
 		.AccessMask = TranslateAccess(use.Usage, use.Access),
 		.Layout = TranslateLayout(use.Usage, aspectFlags),
+		.Writes = IncludesWrite(use.Access)};
+}
+
+RenderGraphExecutor::UsageState RenderGraphExecutor::TranslateUsage(
+	RenderGraph::PassType passType,
+	const RenderGraph::BufferUse& use)
+{
+	return UsageState{
+		.StageMask = TranslateStage(passType, use.Usage),
+		.AccessMask = TranslateAccess(use.Usage, use.Access),
+		.Layout = vk::ImageLayout::eUndefined,
 		.Writes = IncludesWrite(use.Access)};
 }
 
@@ -208,6 +286,32 @@ vk::PipelineStageFlags2 RenderGraphExecutor::TranslateStage(
 	}
 
 	throw std::invalid_argument("Unknown RenderGraph image usage");
+}
+
+vk::PipelineStageFlags2 RenderGraphExecutor::TranslateStage(
+	RenderGraph::PassType passType,
+	RenderGraph::BufferUsage usage)
+{
+	switch (usage)
+	{
+		case RenderGraph::BufferUsage::Storage:
+			return passType == RenderGraph::PassType::Compute
+				? vk::PipelineStageFlagBits2::eComputeShader
+				: vk::PipelineStageFlagBits2::eAllGraphics;
+		case RenderGraph::BufferUsage::Vertex:
+			return vk::PipelineStageFlagBits2::eVertexInput;
+		case RenderGraph::BufferUsage::Index:
+			return vk::PipelineStageFlagBits2::eVertexInput;
+		case RenderGraph::BufferUsage::Uniform:
+			return passType == RenderGraph::PassType::Compute
+				? vk::PipelineStageFlagBits2::eComputeShader
+				: vk::PipelineStageFlagBits2::eAllGraphics;
+		case RenderGraph::BufferUsage::TransferSource:
+		case RenderGraph::BufferUsage::TransferDestination:
+			return vk::PipelineStageFlagBits2::eTransfer;
+	}
+
+	throw std::invalid_argument("Unknown RenderGraph buffer usage");
 }
 
 vk::AccessFlags2 RenderGraphExecutor::TranslateAccess(
@@ -283,6 +387,65 @@ vk::AccessFlags2 RenderGraphExecutor::TranslateAccess(
 	throw std::invalid_argument("Unknown RenderGraph image usage");
 }
 
+vk::AccessFlags2 RenderGraphExecutor::TranslateAccess(
+	RenderGraph::BufferUsage usage,
+	RenderGraph::AccessType access)
+{
+	const bool reads = IncludesRead(access);
+	const bool writes = IncludesWrite(access);
+	vk::AccessFlags2 result{};
+
+	switch (usage)
+	{
+		case RenderGraph::BufferUsage::Storage:
+			if (reads)
+			{
+				result |= vk::AccessFlagBits2::eShaderStorageRead;
+			}
+			if (writes)
+			{
+				result |= vk::AccessFlagBits2::eShaderStorageWrite;
+			}
+			return result;
+		case RenderGraph::BufferUsage::Vertex:
+			if (writes)
+			{
+				throw std::invalid_argument("Vertex buffer usage cannot declare a write access");
+			}
+			return reads ? vk::AccessFlagBits2::eVertexAttributeRead : vk::AccessFlags2{};
+		case RenderGraph::BufferUsage::Index:
+			if (writes)
+			{
+				throw std::invalid_argument("Index buffer usage cannot declare a write access");
+			}
+			return reads ? vk::AccessFlagBits2::eIndexRead : vk::AccessFlags2{};
+		case RenderGraph::BufferUsage::Uniform:
+			if (writes)
+			{
+				throw std::invalid_argument("Uniform buffer usage cannot declare a write access");
+			}
+			return reads ? vk::AccessFlagBits2::eUniformRead : vk::AccessFlags2{};
+		case RenderGraph::BufferUsage::TransferSource:
+			if (writes)
+			{
+				throw std::invalid_argument("Transfer source buffer usage cannot declare a write access");
+			}
+			return reads ? vk::AccessFlagBits2::eTransferRead : vk::AccessFlags2{};
+		case RenderGraph::BufferUsage::TransferDestination:
+			if (reads)
+			{
+				result |= vk::AccessFlagBits2::eTransferRead;
+			}
+			if (writes)
+			{
+				result |= vk::AccessFlagBits2::eTransferWrite;
+			}
+			return result;
+	}
+
+	throw std::invalid_argument("Unknown RenderGraph buffer usage");
+}
+
 vk::ImageLayout RenderGraphExecutor::TranslateLayout(
 	RenderGraph::ImageUsage usage,
 	vk::ImageAspectFlags aspectFlags)
@@ -356,5 +519,34 @@ void RenderGraphExecutor::EmitImageBarrier(
 	const vk::DependencyInfo dependencyInfo{
 		.imageMemoryBarrierCount = 1,
 		.pImageMemoryBarriers = &barrier};
+	commandBuffer.pipelineBarrier2(dependencyInfo);
+}
+
+void RenderGraphExecutor::EmitBufferBarrier(
+	vk::raii::CommandBuffer& commandBuffer,
+	const BufferBinding& binding,
+	vk::PipelineStageFlags2 sourceStage,
+	vk::AccessFlags2 sourceAccess,
+	vk::PipelineStageFlags2 destinationStage,
+	vk::AccessFlags2 destinationAccess) const
+{
+	if (sourceStage == destinationStage && sourceAccess == destinationAccess)
+	{
+		return;
+	}
+
+	const vk::BufferMemoryBarrier2 barrier{
+		.srcStageMask = sourceStage,
+		.srcAccessMask = sourceAccess,
+		.dstStageMask = destinationStage,
+		.dstAccessMask = destinationAccess,
+		.srcQueueFamilyIndex = vk::QueueFamilyIgnored,
+		.dstQueueFamilyIndex = vk::QueueFamilyIgnored,
+		.buffer = binding.Buffer,
+		.offset = 0,
+		.size = vk::WholeSize};
+	const vk::DependencyInfo dependencyInfo{
+		.bufferMemoryBarrierCount = 1,
+		.pBufferMemoryBarriers = &barrier};
 	commandBuffer.pipelineBarrier2(dependencyInfo);
 }

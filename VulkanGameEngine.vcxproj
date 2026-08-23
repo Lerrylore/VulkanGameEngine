@@ -144,6 +144,8 @@
     <ClCompile Include="Engine\Renderer\RenderGraph.cpp" />
     <ClCompile Include="Engine\Renderer\RenderGraphExecutor.cpp" />
     <ClCompile Include="Engine\Renderer\RenderGraphSelfTest.cpp" />
+    <ClCompile Include="Engine\Renderer\RenderPasses.cpp" />
+    <ClCompile Include="Engine\Renderer\Renderer.cpp" />
     <ClCompile Include="Engine\Renderer\RenderTargetResources.cpp" />
     <ClCompile Include="Engine\Renderer\ShadowMapResources.cpp" />
     <ClCompile Include="Engine\Renderer\SwapchainResources.cpp" />
@@ -192,6 +194,8 @@
     <ClInclude Include="Engine\Renderer\RenderGraph.h" />
     <ClInclude Include="Engine\Renderer\RenderGraphExecutor.h" />
     <ClInclude Include="Engine\Renderer\RenderGraphSelfTest.h" />
+    <ClInclude Include="Engine\Renderer\RenderPasses.h" />
+    <ClInclude Include="Engine\Renderer\Renderer.h" />
     <ClInclude Include="Engine\Renderer\RenderTargetResources.h" />
     <ClInclude Include="Engine\Renderer\ShadowMapResources.h" />
     <ClInclude Include="Engine\Renderer\SwapchainResources.h" />

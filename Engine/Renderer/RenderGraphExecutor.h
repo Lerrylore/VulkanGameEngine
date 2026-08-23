@@ -36,15 +36,19 @@ class RenderGraphExecutor final
 	RenderGraphExecutor(RenderGraphExecutor&&) = delete;
 	RenderGraphExecutor& operator=(RenderGraphExecutor&&) = delete;
 
-	// Binds a non-owning vk::Image to a graph image. Rebinding the same graph
-	// handle replaces its previous binding, which is useful for swapchain
-	// images selected for the current frame.
+	// Binds a non-owning vk::Image to a graph resource. Its format, usage and
+	// initial/final layouts are declared by RenderGraph::ImageDescription.
+	// Rebinding the same resource is useful for the acquired swapchain image.
 	void BindImage(
 		RenderGraph::ImageHandle resource,
 		vk::Image image,
-		vk::ImageAspectFlags aspectFlags,
-		vk::ImageLayout initialLayout,
-		vk::ImageLayout finalLayout);
+		vk::ImageAspectFlags aspectFlags);
+
+	// Binds a non-owning vk::Buffer to a graph buffer. Buffers have no image
+	// layout; synchronization is derived from the declared usage of each pass.
+	void BindBuffer(
+		RenderGraph::BufferHandle resource,
+		vk::Buffer buffer);
 
 	// Emits synchronization2 image barriers before/after pass callbacks. The
 	// command buffer must already be in the recording state and is not begun or
@@ -59,8 +63,6 @@ class RenderGraphExecutor final
 	{
 		vk::Image Image = nullptr;
 		vk::ImageAspectFlags AspectFlags{};
-		vk::ImageLayout InitialLayout = vk::ImageLayout::eUndefined;
-		vk::ImageLayout FinalLayout = vk::ImageLayout::eUndefined;
 	};
 
 	struct ImageState
@@ -69,6 +71,20 @@ class RenderGraphExecutor final
 		vk::PipelineStageFlags2 StageMask{};
 		vk::AccessFlags2 AccessMask{};
 		vk::ImageLayout Layout = vk::ImageLayout::eUndefined;
+		bool HasBeenUsed = false;
+		bool LastUseWrites = false;
+	};
+
+	struct BufferBinding
+	{
+		vk::Buffer Buffer = nullptr;
+	};
+
+	struct BufferState
+	{
+		RenderGraph::BufferHandle Resource;
+		vk::PipelineStageFlags2 StageMask{};
+		vk::AccessFlags2 AccessMask{};
 		bool HasBeenUsed = false;
 		bool LastUseWrites = false;
 	};
@@ -86,6 +102,10 @@ class RenderGraphExecutor final
 		const RenderGraph::ImageUse& use,
 		vk::ImageAspectFlags aspectFlags);
 
+	static UsageState TranslateUsage(
+		RenderGraph::PassType passType,
+		const RenderGraph::BufferUse& use);
+
 	static vk::PipelineStageFlags2 TranslateStage(
 		RenderGraph::PassType passType,
 		RenderGraph::ImageUsage usage);
@@ -97,6 +117,14 @@ class RenderGraphExecutor final
 	static vk::ImageLayout TranslateLayout(
 		RenderGraph::ImageUsage usage,
 		vk::ImageAspectFlags aspectFlags);
+
+	static vk::PipelineStageFlags2 TranslateStage(
+		RenderGraph::PassType passType,
+		RenderGraph::BufferUsage usage);
+
+	static vk::AccessFlags2 TranslateAccess(
+		RenderGraph::BufferUsage usage,
+		RenderGraph::AccessType access);
 
 	static bool IncludesRead(RenderGraph::AccessType access) noexcept;
 	static bool IncludesWrite(RenderGraph::AccessType access) noexcept;
@@ -112,6 +140,15 @@ class RenderGraphExecutor final
 		vk::ImageLayout oldLayout,
 		vk::ImageLayout newLayout) const;
 
+	void EmitBufferBarrier(
+		vk::raii::CommandBuffer& commandBuffer,
+		const BufferBinding& binding,
+		vk::PipelineStageFlags2 sourceStage,
+		vk::AccessFlags2 sourceAccess,
+		vk::PipelineStageFlags2 destinationStage,
+		vk::AccessFlags2 destinationAccess) const;
+
 	const RenderGraph& Graph;
 	std::unordered_map<std::uint32_t, ImageBinding> ImageBindings;
+	std::unordered_map<std::uint32_t, BufferBinding> BufferBindings;
 };

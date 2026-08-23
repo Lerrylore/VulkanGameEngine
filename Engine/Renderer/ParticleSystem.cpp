@@ -101,14 +101,7 @@ void ParticleSystem::RecordComputeCommandBuffer(uint32_t frameIndex)
 
 	auto& commandBuffer = FrameResourcesRef.computeCommandBuffer(frameIndex);
 	commandBuffer.begin({});
-	commandBuffer.bindPipeline(vk::PipelineBindPoint::eCompute, *ComputePipeline);
-	commandBuffer.bindDescriptorSets(
-		vk::PipelineBindPoint::eCompute,
-		*ComputePipelineLayout,
-		0,
-		*ComputeDescriptorSets.at(frameIndex),
-		{});
-	commandBuffer.dispatch(DispatchGroupCount(), 1, 1);
+	RecordComputeCommands(commandBuffer, frameIndex);
 
 	vk::BufferMemoryBarrier2 particleBarrier{
 		.srcStageMask = vk::PipelineStageFlagBits2::eComputeShader,
@@ -125,6 +118,26 @@ void ParticleSystem::RecordComputeCommandBuffer(uint32_t frameIndex)
 		.pBufferMemoryBarriers = &particleBarrier};
 	commandBuffer.pipelineBarrier2(particleDependency);
 	commandBuffer.end();
+}
+
+void ParticleSystem::RecordComputeCommands(
+	vk::raii::CommandBuffer& commandBuffer,
+	uint32_t frameIndex)
+{
+	ValidateInitialized();
+	if (frameIndex >= ComputeDescriptorSets.size())
+	{
+		throw std::out_of_range("particle frame index is out of range");
+	}
+
+	commandBuffer.bindPipeline(vk::PipelineBindPoint::eCompute, *ComputePipeline);
+	commandBuffer.bindDescriptorSets(
+		vk::PipelineBindPoint::eCompute,
+		*ComputePipelineLayout,
+		0,
+		*ComputeDescriptorSets.at(frameIndex),
+		{});
+	commandBuffer.dispatch(DispatchGroupCount(), 1, 1);
 }
 
 void ParticleSystem::RecordDraw(vk::raii::CommandBuffer& commandBuffer, uint32_t frameIndex) const
@@ -168,6 +181,17 @@ uint32_t ParticleSystem::DispatchGroupCount() const noexcept
 {
 	return (Config.ParticleCount + Config.ComputeWorkgroupSize - 1) /
 		Config.ComputeWorkgroupSize;
+}
+
+vk::Buffer ParticleSystem::ParticleBuffer(uint32_t frameIndex) const
+{
+	ValidateInitialized();
+	return *ParticleBuffers.at(frameIndex).buffer();
+}
+
+vk::DeviceSize ParticleSystem::ParticleBufferSize() const noexcept
+{
+	return sizeof(Particle) * Config.ParticleCount;
 }
 
 vk::VertexInputBindingDescription ParticleSystem::Particle::GetBindingDescription()

@@ -35,6 +35,7 @@
 #include "Engine/Renderer/RenderGraph.h"
 #include "Engine/Renderer/RenderGraphExecutor.h"
 #include "Engine/Renderer/RenderGraphSelfTest.h"
+#include "Engine/Renderer/Renderer.h"
 #include "Engine/Renderer/RenderTargetResources.h"
 #include "Engine/Renderer/ShadowMapResources.h"
 #include "Engine/Renderer/SwapchainResources.h"
@@ -192,6 +193,8 @@ class VulkanGameEngineApplication
 	vk::raii::Pipeline       shadowGraphicsPipeline = nullptr;
 	vk::raii::PipelineLayout gBufferPipelineLayout = nullptr;
 	vk::raii::Pipeline       gBufferPipeline = nullptr;
+	vk::raii::Pipeline       forwardDepthPrepassPipeline = nullptr;
+	vk::raii::Pipeline       gBufferDepthPrepassPipeline = nullptr;
 	vk::raii::DescriptorSetLayout deferredDescriptorSetLayout = nullptr;
 	vk::raii::PipelineLayout deferredPipelineLayout = nullptr;
 	vk::raii::Pipeline       deferredLightingPipeline = nullptr;
@@ -213,9 +216,10 @@ class VulkanGameEngineApplication
 	CameraComponent* ActiveCamera = nullptr;
 	DirectionalLightComponent* DirectionalLight = nullptr;
 	DebugViewMode CurrentDebugView = DebugViewMode::Lit;
-	enum class RenderPathMode { Forward, Deferred };
-	RenderPathMode CurrentRenderPath = RenderPathMode::Forward;
+	Renderer::RenderPath CurrentRenderPath = Renderer::RenderPath::Forward;
 	bool RenderPathToggleWasDown = false;
+	bool DepthPrepassEnabled = true;
+	bool DepthPrepassToggleWasDown = false;
 	// Declared after Scene and its resources so it is destroyed before them.
 	std::optional<MeshRenderer> MeshRendererInstance;
 
@@ -223,6 +227,7 @@ class VulkanGameEngineApplication
 	SingleTimeCommandExecutor SingleTimeCommands{vulkan, frameResources.commandPool()};
 	std::optional<ParticleSystem> ParticleSystemInstance;
 	std::optional<ForwardRenderer> ForwardRendererInstance;
+	Renderer FrameRenderer;
 
 	const vk::SampleCountFlagBits msaaSamples = vulkan.msaaSamples();
 	std::vector<std::byte> StreamedShaderBinary;
@@ -255,22 +260,25 @@ class VulkanGameEngineApplication
 			throw std::runtime_error("render graph self-test failed");
 		}
 		std::clog << "[RenderGraphSelfTest] passed\n";
+		FrameRenderer.SetRenderPath(CurrentRenderPath);
 
-		RenderGraph graphPreview;
-		const auto shadowPreview = graphPreview.CreateImage(
-			"ShadowMap", {{2048, 2048}, RenderGraph::ImageFormat::D32Sfloat, 1, 1, 1, true, false});
-		const auto scenePreview = graphPreview.CreateImage(
-			"SceneColor", {{ApplicationConfig::WindowWidth, ApplicationConfig::WindowHeight}, RenderGraph::ImageFormat::R8G8B8A8Unorm, 1, 1, 1, true, false});
-		const auto swapchainPreview = graphPreview.CreateImage(
-			"Swapchain", {{ApplicationConfig::WindowWidth, ApplicationConfig::WindowHeight}, RenderGraph::ImageFormat::R8G8B8A8Unorm, 1, 1, 1, true, false});
-		const auto previewShadowPass = graphPreview.AddPass("ShadowPass");
-		graphPreview.Write(previewShadowPass, shadowPreview, RenderGraph::ImageUsage::DepthAttachment);
-		const auto previewForwardPass = graphPreview.AddPass("ForwardOpaquePass");
-		graphPreview.Read(previewForwardPass, shadowPreview, RenderGraph::ImageUsage::Sampled);
-		graphPreview.Write(previewForwardPass, scenePreview, RenderGraph::ImageUsage::ColorAttachment);
-		graphPreview.Write(previewForwardPass, swapchainPreview, RenderGraph::ImageUsage::ColorAttachment);
-		const auto previewParticlePass = graphPreview.AddPass("ParticleOverlayPass");
-		graphPreview.ReadWrite(previewParticlePass, swapchainPreview, RenderGraph::ImageUsage::ColorAttachment);
+		const auto previewFrameGraph = FrameRenderer.BuildFrameGraph({
+			.Extent = {ApplicationConfig::WindowWidth, ApplicationConfig::WindowHeight},
+			.ShadowResolution = 2048,
+			.MsaaSamples = msaaSamples,
+			.ParticleBufferSize = 1,
+			.DepthPrepassEnabled = DepthPrepassEnabled,
+			.ShadowFormat = vk::Format::eD32Sfloat,
+			.SwapchainFormat = vk::Format::eR8G8B8A8Unorm,
+			.ForwardColorFormat = vk::Format::eR8G8B8A8Unorm,
+			.ForwardDepthFormat = vk::Format::eD32Sfloat,
+			.GBufferFormats = {
+				vk::Format::eR8G8B8A8Unorm,
+				vk::Format::eR16G16B16A16Sfloat,
+				vk::Format::eR16G16B16A16Sfloat,
+				vk::Format::eR16G16B16A16Sfloat},
+			.GBufferDepthFormat = vk::Format::eD32Sfloat});
+		const auto& graphPreview = previewFrameGraph.Graph;
 		const auto previewCompilation = graphPreview.Compile();
 		std::clog << graphPreview.DumpText(previewCompilation);
 		std::clog << graphPreview.DumpDot(previewCompilation);
@@ -284,6 +292,7 @@ class VulkanGameEngineApplication
 		createGraphicsPipeline();
 		createShadowGraphicsPipeline();
 		createGBufferPipeline();
+		createDepthPrepassPipelines();
 		createDeferredLightingResources();
 		textureResource = createTextureImage(
 			"viking_room_base_color",
@@ -347,6 +356,7 @@ class VulkanGameEngineApplication
 		startStreamingResourceLoad();
 		DebugViewController::PrintHelp();
 		std::clog << "[RenderPath] F6 toggles Forward/Deferred\n";
+		std::clog << "[DepthPrepass] F7 toggles " << (DepthPrepassEnabled ? "on" : "off") << "\n";
 	}
 
 	void loadShaderResources()
@@ -389,6 +399,7 @@ class VulkanGameEngineApplication
 			{
 				createGraphicsPipeline();
 				createShadowGraphicsPipeline();
+				createDepthPrepassPipelines();
 			});
 			ResourceReloadCallbacks.emplace("particles", [this]()
 			{
@@ -488,14 +499,28 @@ class VulkanGameEngineApplication
 			if (renderPathToggleDown && !RenderPathToggleWasDown)
 			{
 				device.waitIdle();
-				CurrentRenderPath = CurrentRenderPath == RenderPathMode::Forward
-					? RenderPathMode::Deferred
-					: RenderPathMode::Forward;
+				CurrentRenderPath = CurrentRenderPath == Renderer::RenderPath::Forward
+					? Renderer::RenderPath::Deferred
+					: Renderer::RenderPath::Forward;
+				FrameRenderer.SetRenderPath(CurrentRenderPath);
 				std::clog << "[RenderPath] switched to "
-					<< (CurrentRenderPath == RenderPathMode::Forward ? "Forward" : "Deferred")
+					<< (CurrentRenderPath == Renderer::RenderPath::Forward ? "Forward" : "Deferred")
 					<< "\n";
 			}
 			RenderPathToggleWasDown = renderPathToggleDown;
+			const bool depthPrepassToggleDown = window.IsKeyDown(WindowKey::F7);
+			if (depthPrepassToggleDown && !DepthPrepassToggleWasDown)
+			{
+				device.waitIdle();
+				DepthPrepassEnabled = !DepthPrepassEnabled;
+				createGraphicsPipeline();
+				createGBufferPipeline();
+				createDepthPrepassPipelines();
+				ForwardGraphDumpWritten = false;
+				DeferredGraphDumpWritten = false;
+				std::clog << "[DepthPrepass] " << (DepthPrepassEnabled ? "enabled" : "disabled") << "\n";
+			}
+			DepthPrepassToggleWasDown = depthPrepassToggleDown;
 			Streaming.Process(1);
 			{
 				std::lock_guard lock(AsyncResultMutex);
@@ -559,6 +584,7 @@ class VulkanGameEngineApplication
 		{
 			createGraphicsPipeline();
 			createGBufferPipeline();
+			createDepthPrepassPipelines();
 			createDeferredLightingPipeline();
 			ParticleSystemInstance->RebuildGraphicsPipeline(
 				ParticleShader->module(),
@@ -634,8 +660,8 @@ class VulkanGameEngineApplication
 		vk::PipelineDynamicStateCreateInfo dynamicState{.dynamicStateCount = static_cast<uint32_t>(dynamicStates.size()), .pDynamicStates = dynamicStates.data()};
 		vk::PipelineDepthStencilStateCreateInfo depthStencil{
 			.depthTestEnable = vk::True,
-			.depthWriteEnable = vk::True,
-			.depthCompareOp = vk::CompareOp::eLess,
+			.depthWriteEnable = DepthPrepassEnabled ? vk::False : vk::True,
+			.depthCompareOp = DepthPrepassEnabled ? vk::CompareOp::eEqual : vk::CompareOp::eLess,
 			.depthBoundsTestEnable = vk::False,
 			.stencilTestEnable = vk::False };
 
@@ -773,8 +799,8 @@ class VulkanGameEngineApplication
 			.pAttachments = blendAttachments.data()};
 		vk::PipelineDepthStencilStateCreateInfo depthStencil{
 			.depthTestEnable = vk::True,
-			.depthWriteEnable = vk::True,
-			.depthCompareOp = vk::CompareOp::eLess};
+			.depthWriteEnable = DepthPrepassEnabled ? vk::False : vk::True,
+			.depthCompareOp = DepthPrepassEnabled ? vk::CompareOp::eEqual : vk::CompareOp::eLess};
 		std::array dynamicStates{vk::DynamicState::eViewport, vk::DynamicState::eScissor};
 		vk::PipelineDynamicStateCreateInfo dynamicState{
 			.dynamicStateCount = static_cast<uint32_t>(dynamicStates.size()),
@@ -808,6 +834,73 @@ class VulkanGameEngineApplication
 			device,
 			nullptr,
 			pipelineChain.get<vk::GraphicsPipelineCreateInfo>());
+	}
+
+	void createDepthPrepassPipelines()
+	{
+		const auto createPipeline = [this](vk::SampleCountFlagBits samples, vk::Format depthFormat)
+		{
+			vk::PipelineShaderStageCreateInfo vertexShaderStageInfo{
+				.stage = vk::ShaderStageFlagBits::eVertex,
+				.module = MainShader->module(),
+				.pName = "vertMain"};
+			auto bindingDescription = Vertex::GetBindingDescription();
+			auto attributeDescriptions = Vertex::GetAttributeDescriptions();
+			vk::PipelineVertexInputStateCreateInfo vertexInputInfo{
+				.vertexBindingDescriptionCount = 1,
+				.pVertexBindingDescriptions = &bindingDescription,
+				.vertexAttributeDescriptionCount = static_cast<uint32_t>(attributeDescriptions.size()),
+				.pVertexAttributeDescriptions = attributeDescriptions.data()};
+			vk::PipelineInputAssemblyStateCreateInfo inputAssembly{
+				.topology = vk::PrimitiveTopology::eTriangleList};
+			vk::PipelineViewportStateCreateInfo viewportState{
+				.viewportCount = 1,
+				.scissorCount = 1};
+			vk::PipelineRasterizationStateCreateInfo rasterizer{
+				.depthClampEnable = vk::False,
+				.rasterizerDiscardEnable = vk::False,
+				.polygonMode = vk::PolygonMode::eFill,
+				.cullMode = vk::CullModeFlagBits::eBack,
+				.frontFace = vk::FrontFace::eCounterClockwise,
+				.lineWidth = 1.0f};
+			vk::PipelineMultisampleStateCreateInfo multisampling{
+				.rasterizationSamples = samples};
+			vk::PipelineDepthStencilStateCreateInfo depthStencil{
+				.depthTestEnable = vk::True,
+				.depthWriteEnable = vk::True,
+				.depthCompareOp = vk::CompareOp::eLess};
+			std::array dynamicStates{
+				vk::DynamicState::eViewport,
+				vk::DynamicState::eScissor};
+			vk::PipelineDynamicStateCreateInfo dynamicState{
+				.dynamicStateCount = static_cast<uint32_t>(dynamicStates.size()),
+				.pDynamicStates = dynamicStates.data()};
+
+			vk::StructureChain<vk::GraphicsPipelineCreateInfo, vk::PipelineRenderingCreateInfo> pipelineChain{
+				{.stageCount = 1,
+				 .pStages = &vertexShaderStageInfo,
+				 .pVertexInputState = &vertexInputInfo,
+				 .pInputAssemblyState = &inputAssembly,
+				 .pViewportState = &viewportState,
+				 .pRasterizationState = &rasterizer,
+				 .pMultisampleState = &multisampling,
+				 .pDepthStencilState = &depthStencil,
+				 .pDynamicState = &dynamicState,
+				 .layout = pipelineLayout,
+				 .renderPass = nullptr},
+				{.colorAttachmentCount = 0,
+				 .depthAttachmentFormat = depthFormat}};
+
+			return vk::raii::Pipeline(
+				device,
+				nullptr,
+				pipelineChain.get<vk::GraphicsPipelineCreateInfo>());
+		};
+
+		forwardDepthPrepassPipeline = createPipeline(msaaSamples, renderTargets.depthFormat());
+		gBufferDepthPrepassPipeline = createPipeline(
+			vk::SampleCountFlagBits::e1,
+			gBufferResources->DepthFormat());
 	}
 
 	void createDeferredLightingResources()
@@ -1547,59 +1640,34 @@ class VulkanGameEngineApplication
 
 	void recordCommandBuffer(uint32_t imageIndex)
 	{
-		if (CurrentRenderPath == RenderPathMode::Deferred)
+		if (FrameRenderer.GetRenderPath() == Renderer::RenderPath::Deferred)
 		{
 			recordDeferredCommandBuffer(imageIndex);
 			return;
 		}
 		const uint32_t frameIndex = frameResources.currentFrame();
-		RenderGraph graph;
-		const auto shadowMap = graph.CreateImage(
-			"ShadowMap",
-			{{shadowMapResources.GetResolution(), shadowMapResources.GetResolution()},
-			 RenderGraph::ImageFormat::D32Sfloat,
-			 1,
-			 1,
-			 1,
-			 true,
-			 false});
-		const auto sceneColor = graph.CreateImage(
-			"ForwardColorMSAA",
-			{{swapChainExtent.width, swapChainExtent.height},
-			 RenderGraph::ImageFormat::R8G8B8A8Unorm,
-			 1,
-			 1,
-			 static_cast<uint32_t>(msaaSamples),
-			 true,
-			 false});
-		const auto depth = graph.CreateImage(
-			"ForwardDepthMSAA",
-			{{swapChainExtent.width, swapChainExtent.height},
-			 RenderGraph::ImageFormat::D32Sfloat,
-			 1,
-			 1,
-			 static_cast<uint32_t>(msaaSamples),
-			 true,
-			 false});
-		const auto swapchain = graph.CreateImage(
-			"Swapchain",
-			{{swapChainExtent.width, swapChainExtent.height},
-			 RenderGraph::ImageFormat::R8G8B8A8Unorm,
-			 1,
-			 1,
-			 1,
-			 true,
-			 false});
-
-		const auto shadowPass = graph.AddPass("ShadowPass");
-		graph.Write(shadowPass, shadowMap, RenderGraph::ImageUsage::DepthAttachment);
-		const auto forwardPass = graph.AddPass("ForwardOpaquePass");
-		graph.Read(forwardPass, shadowMap, RenderGraph::ImageUsage::Sampled);
-		graph.Write(forwardPass, sceneColor, RenderGraph::ImageUsage::ColorAttachment);
-		graph.Write(forwardPass, depth, RenderGraph::ImageUsage::DepthAttachment);
-		graph.Write(forwardPass, swapchain, RenderGraph::ImageUsage::ColorAttachment);
-		const auto particlePass = graph.AddPass("ParticleOverlayPass");
-		graph.ReadWrite(particlePass, swapchain, RenderGraph::ImageUsage::ColorAttachment);
+		const auto frameGraph = FrameRenderer.BuildFrameGraph({
+			.Extent = {swapChainExtent.width, swapChainExtent.height},
+			.ShadowResolution = shadowMapResources.GetResolution(),
+			.MsaaSamples = msaaSamples,
+			.ParticleBufferSize = ParticleSystemInstance->ParticleBufferSize(),
+			.DepthPrepassEnabled = DepthPrepassEnabled,
+			.ShadowFormat = shadowMapResources.GetFormat(),
+			.SwapchainFormat = swapChainSurfaceFormat.format,
+			.ForwardColorFormat = swapChainSurfaceFormat.format,
+			.ForwardDepthFormat = renderTargets.depthFormat()});
+		auto& graph = frameGraph.Graph;
+		const auto& graphResources = frameGraph.Resources;
+		const auto shadowMap = graphResources.ShadowMap;
+		const auto sceneColor = graphResources.ForwardColor;
+		const auto depth = graphResources.ForwardDepth;
+		const auto swapchain = graphResources.Swapchain;
+		const auto particleBuffer = graphResources.ParticleBuffer;
+		const auto particleSimulation = graphResources.ParticleSimulation;
+		const auto shadowPass = graphResources.ShadowPass;
+		const auto depthPrepassPass = graphResources.DepthPrepass;
+		const auto forwardPass = graphResources.ForwardPass;
+		const auto particlePass = graphResources.ParticleOverlayPass;
 
 		const auto compilation = graph.Compile();
 		if (!compilation.Succeeded)
@@ -1617,74 +1685,43 @@ class VulkanGameEngineApplication
 		executor.BindImage(
 			shadowMap,
 			*shadowMapResources.GetImage(frameIndex),
-			vk::ImageAspectFlagBits::eDepth,
-			vk::ImageLayout::eUndefined,
-			vk::ImageLayout::eShaderReadOnlyOptimal);
+			vk::ImageAspectFlagBits::eDepth);
 		executor.BindImage(
 			sceneColor,
 			*renderTargets.colorImage(),
-			vk::ImageAspectFlagBits::eColor,
-			vk::ImageLayout::eUndefined,
-			vk::ImageLayout::eColorAttachmentOptimal);
+			vk::ImageAspectFlagBits::eColor);
 		executor.BindImage(
 			depth,
 			*renderTargets.depthImage(),
-			vk::ImageAspectFlagBits::eDepth,
-			vk::ImageLayout::eUndefined,
-			vk::ImageLayout::eDepthAttachmentOptimal);
+			vk::ImageAspectFlagBits::eDepth);
 		executor.BindImage(
 			swapchain,
 			swapChainImages[imageIndex],
-			vk::ImageAspectFlagBits::eColor,
-			vk::ImageLayout::eUndefined,
-			vk::ImageLayout::ePresentSrcKHR);
+			vk::ImageAspectFlagBits::eColor);
+		executor.BindBuffer(
+			particleBuffer,
+			ParticleSystemInstance->ParticleBuffer(frameIndex));
+		const RenderPassContext passContext{
+			.ImageIndex = imageIndex,
+			.FrameIndex = frameIndex,
+			.Extent = swapChainExtent,
+			.DepthPrepassEnabled = DepthPrepassEnabled,
+			.SwapchainImageViews = &swapChainImageViews,
+			.ForwardTargets = &renderTargets,
+			.Meshes = &*MeshRendererInstance,
+			.Forward = &*ForwardRendererInstance,
+			.Particles = &*ParticleSystemInstance,
+			.ForwardPipeline = &graphicsPipeline,
+			.ForwardPipelineLayout = &pipelineLayout,
+			.ShadowPipeline = &shadowGraphicsPipeline,
+			.ShadowPipelineLayout = &shadowPipelineLayout,
+			.ForwardDepthPrepassPipeline = &forwardDepthPrepassPipeline};
 		executor.Execute(
 			commandBuffer,
 			compilation,
-			[this, frameIndex, imageIndex, shadowPass, forwardPass, particlePass](vk::raii::CommandBuffer& passCommandBuffer, RenderGraph::PassId passId)
+			[this, passContext](vk::raii::CommandBuffer& passCommandBuffer, RenderGraph::PassId passId)
 			{
-				if (passId == shadowPass)
-				{
-					ForwardRendererInstance->RecordShadowPassContents(
-						passCommandBuffer,
-						frameIndex,
-						shadowGraphicsPipeline,
-						shadowPipelineLayout);
-				}
-				else if (passId == forwardPass)
-				{
-					ForwardRendererInstance->RecordForwardPassContents(
-						passCommandBuffer,
-						imageIndex,
-						frameIndex,
-						graphicsPipeline,
-						pipelineLayout,
-						nullptr);
-				}
-				else if (passId == particlePass)
-				{
-					const vk::RenderingAttachmentInfo colorAttachment{
-						.imageView = swapChainImageViews[imageIndex],
-						.imageLayout = vk::ImageLayout::eColorAttachmentOptimal,
-						.loadOp = vk::AttachmentLoadOp::eLoad,
-						.storeOp = vk::AttachmentStoreOp::eStore};
-					const vk::RenderingInfo renderingInfo{
-						.renderArea = {.offset = {0, 0}, .extent = swapChainExtent},
-						.layerCount = 1,
-						.colorAttachmentCount = 1,
-						.pColorAttachments = &colorAttachment};
-					passCommandBuffer.beginRendering(renderingInfo);
-					passCommandBuffer.setViewport(0, vk::Viewport(
-						0.0f,
-						0.0f,
-						static_cast<float>(swapChainExtent.width),
-						static_cast<float>(swapChainExtent.height),
-						0.0f,
-						1.0f));
-					passCommandBuffer.setScissor(0, vk::Rect2D(vk::Offset2D(0, 0), swapChainExtent));
-					ParticleSystemInstance->RecordDraw(passCommandBuffer, frameIndex);
-					passCommandBuffer.endRendering();
-				}
+				FrameRenderer.RecordPass(passCommandBuffer, passId, passContext);
 			});
 		commandBuffer.end();
 	}
@@ -1692,39 +1729,33 @@ class VulkanGameEngineApplication
 	void recordDeferredCommandBuffer(uint32_t imageIndex)
 	{
 		const uint32_t frameIndex = frameResources.currentFrame();
-		RenderGraph graph;
-		const auto shadowMap = graph.CreateImage(
-			"ShadowMap",
-			{{shadowMapResources.GetResolution(), shadowMapResources.GetResolution()}, RenderGraph::ImageFormat::D32Sfloat, 1, 1, 1, true, false});
-		std::array<RenderGraph::ImageHandle, GBufferResources::AttachmentCount> gBufferColors{
-			graph.CreateImage("GBufferAlbedoMetallic", {{swapChainExtent.width, swapChainExtent.height}, RenderGraph::ImageFormat::R8G8B8A8Unorm, 1, 1, 1, true, false}),
-			graph.CreateImage("GBufferNormalRoughness", {{swapChainExtent.width, swapChainExtent.height}, RenderGraph::ImageFormat::R16G16B16A16Sfloat, 1, 1, 1, true, false}),
-			graph.CreateImage("GBufferWorldPosition", {{swapChainExtent.width, swapChainExtent.height}, RenderGraph::ImageFormat::R16G16B16A16Sfloat, 1, 1, 1, true, false}),
-			graph.CreateImage("GBufferEmissiveOcclusion", {{swapChainExtent.width, swapChainExtent.height}, RenderGraph::ImageFormat::R16G16B16A16Sfloat, 1, 1, 1, true, false})};
-		const auto gBufferDepth = graph.CreateImage(
-			"GBufferDepth",
-			{{swapChainExtent.width, swapChainExtent.height}, RenderGraph::ImageFormat::D32Sfloat, 1, 1, 1, true, false});
-		const auto swapchain = graph.CreateImage(
-			"Swapchain",
-			{{swapChainExtent.width, swapChainExtent.height}, RenderGraph::ImageFormat::R8G8B8A8Unorm, 1, 1, 1, true, false});
-
-		const auto shadowPass = graph.AddPass("ShadowPass");
-		graph.Write(shadowPass, shadowMap, RenderGraph::ImageUsage::DepthAttachment);
-		const auto gBufferPass = graph.AddPass("GBufferPass");
-		for (const auto resource : gBufferColors)
-		{
-			graph.Write(gBufferPass, resource, RenderGraph::ImageUsage::ColorAttachment);
-		}
-		graph.Write(gBufferPass, gBufferDepth, RenderGraph::ImageUsage::DepthAttachment);
-		const auto lightingPass = graph.AddPass("DeferredLightingPass");
-		graph.Read(lightingPass, shadowMap, RenderGraph::ImageUsage::Sampled);
-		for (const auto resource : gBufferColors)
-		{
-			graph.Read(lightingPass, resource, RenderGraph::ImageUsage::Sampled);
-		}
-		graph.Write(lightingPass, swapchain, RenderGraph::ImageUsage::ColorAttachment);
-		const auto particlePass = graph.AddPass("ParticleOverlayPass");
-		graph.ReadWrite(particlePass, swapchain, RenderGraph::ImageUsage::ColorAttachment);
+		const auto frameGraph = FrameRenderer.BuildFrameGraph({
+			.Extent = {swapChainExtent.width, swapChainExtent.height},
+			.ShadowResolution = shadowMapResources.GetResolution(),
+			.MsaaSamples = vk::SampleCountFlagBits::e1,
+			.ParticleBufferSize = ParticleSystemInstance->ParticleBufferSize(),
+			.DepthPrepassEnabled = DepthPrepassEnabled,
+			.ShadowFormat = shadowMapResources.GetFormat(),
+			.SwapchainFormat = swapChainSurfaceFormat.format,
+			.GBufferFormats = {
+				gBufferResources->ColorFormat(0),
+				gBufferResources->ColorFormat(1),
+				gBufferResources->ColorFormat(2),
+				gBufferResources->ColorFormat(3)},
+			.GBufferDepthFormat = gBufferResources->DepthFormat()});
+		auto& graph = frameGraph.Graph;
+		const auto& graphResources = frameGraph.Resources;
+		const auto shadowMap = graphResources.ShadowMap;
+		const auto& gBufferColors = graphResources.GBufferColors;
+		const auto gBufferDepth = graphResources.GBufferDepth;
+		const auto swapchain = graphResources.Swapchain;
+		const auto particleBuffer = graphResources.ParticleBuffer;
+		const auto particleSimulation = graphResources.ParticleSimulation;
+		const auto shadowPass = graphResources.ShadowPass;
+		const auto depthPrepassPass = graphResources.DepthPrepass;
+		const auto gBufferPass = graphResources.GeometryPass;
+		const auto lightingPass = graphResources.LightingPass;
+		const auto particlePass = graphResources.ParticleOverlayPass;
 
 		const auto compilation = graph.Compile();
 		if (!compilation.Succeeded)
@@ -1739,86 +1770,39 @@ class VulkanGameEngineApplication
 		auto& commandBuffer = frameResources.graphicsCommandBuffer(frameIndex);
 		commandBuffer.begin({});
 		RenderGraphExecutor executor(graph);
-		executor.BindImage(shadowMap, *shadowMapResources.GetImage(frameIndex), vk::ImageAspectFlagBits::eDepth, vk::ImageLayout::eUndefined, vk::ImageLayout::eShaderReadOnlyOptimal);
+		executor.BindImage(shadowMap, *shadowMapResources.GetImage(frameIndex), vk::ImageAspectFlagBits::eDepth);
 		for (std::size_t attachment = 0; attachment < GBufferResources::AttachmentCount; ++attachment)
 		{
-			executor.BindImage(gBufferColors[attachment], *gBufferResources->ColorImage(frameIndex, attachment), vk::ImageAspectFlagBits::eColor, vk::ImageLayout::eUndefined, vk::ImageLayout::eShaderReadOnlyOptimal);
+			executor.BindImage(gBufferColors[attachment], *gBufferResources->ColorImage(frameIndex, attachment), vk::ImageAspectFlagBits::eColor);
 		}
-		executor.BindImage(gBufferDepth, *gBufferResources->DepthImage(frameIndex), vk::ImageAspectFlagBits::eDepth, vk::ImageLayout::eUndefined, vk::ImageLayout::eDepthAttachmentOptimal);
-		executor.BindImage(swapchain, swapChainImages[imageIndex], vk::ImageAspectFlagBits::eColor, vk::ImageLayout::eUndefined, vk::ImageLayout::ePresentSrcKHR);
+		executor.BindImage(gBufferDepth, *gBufferResources->DepthImage(frameIndex), vk::ImageAspectFlagBits::eDepth);
+		executor.BindImage(swapchain, swapChainImages[imageIndex], vk::ImageAspectFlagBits::eColor);
+		executor.BindBuffer(particleBuffer, ParticleSystemInstance->ParticleBuffer(frameIndex));
+		const RenderPassContext passContext{
+			.ImageIndex = imageIndex,
+			.FrameIndex = frameIndex,
+			.Extent = swapChainExtent,
+			.DepthPrepassEnabled = DepthPrepassEnabled,
+			.SwapchainImageViews = &swapChainImageViews,
+			.GBuffer = &*gBufferResources,
+			.Meshes = &*MeshRendererInstance,
+			.Forward = &*ForwardRendererInstance,
+			.Particles = &*ParticleSystemInstance,
+			.ForwardPipelineLayout = &pipelineLayout,
+			.ShadowPipeline = &shadowGraphicsPipeline,
+			.ShadowPipelineLayout = &shadowPipelineLayout,
+			.GBufferDepthPrepassPipeline = &gBufferDepthPrepassPipeline,
+			.GBufferPipeline = &gBufferPipeline,
+			.GBufferPipelineLayout = &gBufferPipelineLayout,
+			.DeferredLightingPipeline = &deferredLightingPipeline,
+			.DeferredPipelineLayout = &deferredPipelineLayout,
+			.DeferredDescriptorSets = &deferredDescriptorSets};
 		executor.Execute(
 			commandBuffer,
 			compilation,
-			[this, frameIndex, imageIndex, shadowPass, gBufferPass, lightingPass, particlePass](vk::raii::CommandBuffer& passCommandBuffer, RenderGraph::PassId passId)
+			[this, passContext](vk::raii::CommandBuffer& passCommandBuffer, RenderGraph::PassId passId)
 			{
-				if (passId == shadowPass)
-				{
-					ForwardRendererInstance->RecordShadowPassContents(passCommandBuffer, frameIndex, shadowGraphicsPipeline, shadowPipelineLayout);
-					return;
-				}
-				if (passId == gBufferPass)
-				{
-					std::array<vk::RenderingAttachmentInfo, GBufferResources::AttachmentCount> attachments{};
-					for (std::size_t attachment = 0; attachment < attachments.size(); ++attachment)
-					{
-						attachments[attachment] = vk::RenderingAttachmentInfo{
-							.imageView = gBufferResources->ColorView(frameIndex, attachment),
-							.imageLayout = vk::ImageLayout::eColorAttachmentOptimal,
-							.loadOp = vk::AttachmentLoadOp::eClear,
-							.storeOp = vk::AttachmentStoreOp::eStore,
-							.clearValue = vk::ClearColorValue(0.0f, 0.0f, 0.0f, 0.0f)};
-					}
-					const vk::RenderingAttachmentInfo depthAttachment{
-						.imageView = gBufferResources->DepthView(frameIndex),
-						.imageLayout = vk::ImageLayout::eDepthAttachmentOptimal,
-						.loadOp = vk::AttachmentLoadOp::eClear,
-						.storeOp = vk::AttachmentStoreOp::eStore,
-						.clearValue = vk::ClearDepthStencilValue(1.0f, 0)};
-					const vk::RenderingInfo renderingInfo{
-						.renderArea = {.offset = {0, 0}, .extent = swapChainExtent},
-						.layerCount = 1,
-						.colorAttachmentCount = static_cast<uint32_t>(attachments.size()),
-						.pColorAttachments = attachments.data(),
-						.pDepthAttachment = &depthAttachment};
-					passCommandBuffer.beginRendering(renderingInfo);
-					passCommandBuffer.setViewport(0, vk::Viewport(0.0f, 0.0f, static_cast<float>(swapChainExtent.width), static_cast<float>(swapChainExtent.height), 0.0f, 1.0f));
-					passCommandBuffer.setScissor(0, vk::Rect2D(vk::Offset2D(0, 0), swapChainExtent));
-					MeshRendererInstance->RecordDraws(passCommandBuffer, gBufferPipeline, gBufferPipelineLayout, frameIndex);
-					passCommandBuffer.endRendering();
-					return;
-				}
-				if (passId == lightingPass)
-				{
-					const vk::RenderingAttachmentInfo colorAttachment{
-						.imageView = swapChainImageViews[imageIndex],
-						.imageLayout = vk::ImageLayout::eColorAttachmentOptimal,
-						.loadOp = vk::AttachmentLoadOp::eClear,
-						.storeOp = vk::AttachmentStoreOp::eStore,
-						.clearValue = vk::ClearColorValue(0.0f, 0.0f, 0.0f, 1.0f)};
-					const vk::RenderingInfo renderingInfo{.renderArea = {.offset = {0, 0}, .extent = swapChainExtent}, .layerCount = 1, .colorAttachmentCount = 1, .pColorAttachments = &colorAttachment};
-					passCommandBuffer.beginRendering(renderingInfo);
-					passCommandBuffer.setViewport(0, vk::Viewport(0.0f, 0.0f, static_cast<float>(swapChainExtent.width), static_cast<float>(swapChainExtent.height), 0.0f, 1.0f));
-					passCommandBuffer.setScissor(0, vk::Rect2D(vk::Offset2D(0, 0), swapChainExtent));
-					passCommandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, *deferredLightingPipeline);
-					passCommandBuffer.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, *deferredPipelineLayout, 0, *deferredDescriptorSets[frameIndex], nullptr);
-					passCommandBuffer.draw(3, 1, 0, 0);
-					passCommandBuffer.endRendering();
-					return;
-				}
-				if (passId == particlePass)
-				{
-					const vk::RenderingAttachmentInfo colorAttachment{
-						.imageView = swapChainImageViews[imageIndex],
-						.imageLayout = vk::ImageLayout::eColorAttachmentOptimal,
-						.loadOp = vk::AttachmentLoadOp::eLoad,
-						.storeOp = vk::AttachmentStoreOp::eStore};
-					const vk::RenderingInfo renderingInfo{.renderArea = {.offset = {0, 0}, .extent = swapChainExtent}, .layerCount = 1, .colorAttachmentCount = 1, .pColorAttachments = &colorAttachment};
-					passCommandBuffer.beginRendering(renderingInfo);
-					passCommandBuffer.setViewport(0, vk::Viewport(0.0f, 0.0f, static_cast<float>(swapChainExtent.width), static_cast<float>(swapChainExtent.height), 0.0f, 1.0f));
-					passCommandBuffer.setScissor(0, vk::Rect2D(vk::Offset2D(0, 0), swapChainExtent));
-					ParticleSystemInstance->RecordDraw(passCommandBuffer, frameIndex);
-					passCommandBuffer.endRendering();
-				}
+				FrameRenderer.RecordPass(passCommandBuffer, passId, passContext);
 			});
 		commandBuffer.end();
 	}
@@ -2047,24 +2031,13 @@ class VulkanGameEngineApplication
 		updateUniformBuffer(frameIndex);
 		ParticleSystemInstance->Update(frameIndex, deltaTime);
 
-		frameResources.computeCommandBuffer(frameIndex).reset();
-		ParticleSystemInstance->RecordComputeCommandBuffer(frameIndex);
-		const vk::SubmitInfo computeSubmitInfo{
-			.commandBufferCount = 1,
-			.pCommandBuffers = &*frameResources.computeCommandBuffer(frameIndex),
-			.signalSemaphoreCount = 1,
-			.pSignalSemaphores = &*frameResources.computeFinishedSemaphore(frameIndex)};
-		queue.submit(computeSubmitInfo, nullptr);
-
 		frameResources.graphicsCommandBuffer(frameIndex).reset();
 		recordCommandBuffer(imageIndex);
 
-		std::array waitSemaphores{
-			*frameResources.imageAvailableSemaphore(frameIndex),
-			*frameResources.computeFinishedSemaphore(frameIndex)};
-		std::array waitDestinationStageMasks{
-			vk::PipelineStageFlags(vk::PipelineStageFlagBits::eColorAttachmentOutput),
-			vk::PipelineStageFlags(vk::PipelineStageFlagBits::eVertexInput)};
+		const std::array waitSemaphores{
+			*frameResources.imageAvailableSemaphore(frameIndex)};
+		const std::array waitDestinationStageMasks{
+			vk::PipelineStageFlags(vk::PipelineStageFlagBits::eColorAttachmentOutput)};
 		
 		const vk::SubmitInfo   submitInfo{.waitSemaphoreCount   = static_cast<uint32_t>(waitSemaphores.size()),
 		                                  .pWaitSemaphores      = waitSemaphores.data(),

@@ -49,7 +49,8 @@ class ForwardRenderer final
 		uint32_t frameIndex,
 		const vk::raii::Pipeline& graphicsPipeline,
 		const vk::raii::PipelineLayout& graphicsPipelineLayout,
-		ParticleDrawCallback particleDraw);
+		ParticleDrawCallback particleDraw,
+		bool loadDepth);
 
   private:
 	void RecordShadowPass(
