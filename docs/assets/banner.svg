@@ -1,0 +1,39 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="360" viewBox="0 0 1280 360" role="img" aria-labelledby="title desc">
+  <title id="title">Vulkan Game Engine</title>
+  <desc id="desc">C++20 and Vulkan 1.4 real-time rendering project, in progress. Abstract graphics pipeline illustration.</desc>
+  <defs>
+    <linearGradient id="bg" x2="1" y2="1"><stop stop-color="#0b1220"/><stop offset="1" stop-color="#171629"/></linearGradient>
+    <linearGradient id="accent"><stop stop-color="#fb7185"/><stop offset="1" stop-color="#a78bfa"/></linearGradient>
+    <pattern id="grid" width="32" height="32" patternUnits="userSpaceOnUse"><path d="M32 0H0V32" fill="none" stroke="#94a3b8" stroke-opacity=".055"/></pattern>
+  </defs>
+  <rect width="1280" height="360" rx="20" fill="url(#bg)"/>
+  <rect width="1280" height="360" rx="20" fill="url(#grid)"/>
+  <rect x="52" y="51" width="4" height="29" rx="2" fill="url(#accent)"/>
+  <g font-family="Segoe UI, Arial, sans-serif">
+    <text x="72" y="72" fill="#a5b4fc" font-size="14" font-weight="600" letter-spacing="3">GRAPHICS PROGRAMMING / PERSONAL PROJECT</text>
+    <text x="52" y="148" fill="#f8fafc" font-size="53" font-weight="700">Vulkan Game Engine</text>
+    <text x="54" y="190" fill="#b6c2d5" font-size="21">Explicit ownership. Real-time rendering. Learning by building.</text>
+    <g font-size="14" font-weight="600">
+      <rect x="54" y="226" width="92" height="33" rx="7" fill="#263249"/><text x="74" y="248" fill="#e2e8f0">C++20</text>
+      <rect x="157" y="226" width="122" height="33" rx="7" fill="#352234"/><text x="175" y="248" fill="#fda4af">VULKAN 1.4</text>
+      <rect x="290" y="226" width="91" height="33" rx="7" fill="#302944"/><text x="309" y="248" fill="#c4b5fd">SLANG</text>
+      <rect x="392" y="226" width="130" height="33" rx="7" fill="#263249"/><text x="409" y="248" fill="#e2e8f0">VULKAN-HPP</text>
+    </g>
+    <circle cx="60" cy="307" r="5" fill="#fbbf24"/><text x="75" y="312" fill="#fbbf24" font-size="14" font-weight="600" letter-spacing="1">IN PROGRESS</text>
+    <text x="227" y="312" fill="#8291a8" font-size="14">Forward + Deferred · PBR · Shadows · GPU Compute</text>
+  </g>
+  <g stroke="#5b567f" stroke-width="2" fill="none">
+    <path d="M951 105V147M951 147H852V188M951 147H1092V188M852 239V280H1092V239"/>
+  </g>
+  <g font-family="Segoe UI, Arial, sans-serif" text-anchor="middle">
+    <rect x="867" y="54" width="169" height="52" rx="12" fill="#202238" stroke="#75639d"/>
+    <text x="951" y="86" fill="#c4b5fd" font-size="16" font-weight="600">RENDER GRAPH</text>
+    <rect x="773" y="188" width="158" height="51" rx="12" fill="#272033" stroke="#80505f"/>
+    <text x="852" y="219" fill="#fda4af" font-size="16" font-weight="600">FORWARD</text>
+    <rect x="1013" y="188" width="158" height="51" rx="12" fill="#1c2939" stroke="#4a6c87"/>
+    <text x="1092" y="219" fill="#93c5fd" font-size="16" font-weight="600">DEFERRED</text>
+    <circle cx="951" cy="147" r="5" fill="#a78bfa"/>
+    <circle cx="972" cy="280" r="5" fill="#a78bfa"/>
+    <text x="972" y="314" fill="#8291a8" font-size="13" letter-spacing="2">GPU PIPELINE</text>
+  </g>
+</svg>
